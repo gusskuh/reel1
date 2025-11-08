@@ -1,0 +1,30 @@
+{
+  "name": "reelgen",
+  "version": "1.0.0",
+  "description": "Automated financial news reel generator with AI-powered scripts, voiceovers, and YouTube upload",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "fetch-news": "tsx scripts/fetchNews.ts",
+    "generate-script": "tsx scripts/generateScript.ts",
+    "generate-speech": "tsx scripts/generateSpeech.ts",
+    "create-reel": "tsx scripts/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/fluent-ffmpeg": "^2.1.28",
+    "axios": "^1.13.1",
+    "dotenv": "^17.2.3",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "googleapis": "^165.0.0",
+    "openai": "^6.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

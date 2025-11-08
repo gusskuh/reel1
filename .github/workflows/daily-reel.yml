@@ -1,0 +1,75 @@
+name: Daily Reel Generation
+
+on:
+  schedule:
+    # Run daily at 9:00 AM UTC (adjust timezone as needed)
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  generate-reel:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create .env file
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+          echo "FMP_API_KEY=${{ secrets.FMP_API_KEY }}" >> .env
+          echo "PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}" >> .env
+          echo "YOUTUBE_CLIENT_ID=${{ secrets.YOUTUBE_CLIENT_ID }}" >> .env
+          echo "YOUTUBE_CLIENT_SECRET=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> .env
+          echo "YOUTUBE_REDIRECT_URI=${{ secrets.YOUTUBE_REDIRECT_URI }}" >> .env
+          echo "UPLOAD_TO_YOUTUBE=${{ secrets.UPLOAD_TO_YOUTUBE || 'false' }}" >> .env
+
+      - name: Setup YouTube token
+        if: ${{ secrets.YOUTUBE_TOKEN_JSON != '' }}
+        run: |
+          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > youtube_token.json
+
+      - name: Generate reel
+        run: npm run create-reel
+        continue-on-error: true
+
+      - name: Upload video artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-reel-${{ github.run_number }}
+          path: |
+            dynamic_reel.mp4
+            news_reel.mp4
+          retention-days: 7
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_number }}
+          path: |
+            *.log
+          retention-days: 7
+
+      - name: Notify on success
+        if: success()
+        run: |
+          echo "✅ Reel generated successfully!"
+          echo "Check the artifacts for the generated video."
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Reel generation failed!"
+          echo "Check the logs artifact for details."
+

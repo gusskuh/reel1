@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+.env.example
+
+# YouTube OAuth token (contains sensitive credentials)
+youtube_token.json
+
+# Generated videos and media files
+*.mp4
+*.mp3
+*.srt
+*.jpg
+*.jpeg
+*.png
+*.gif
+background.*
+scene_*.mp4
+voice.*
+captions.*
+news_reel.*
+dynamic_reel.*
+combined_scenes.*
+scene_trimmed_*.mp4
+concat_list.txt
+ticker_text.txt
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build outputs
+dist/
+build/
+*.js.map
+
