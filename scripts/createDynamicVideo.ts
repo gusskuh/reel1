@@ -2,7 +2,9 @@ import fs from "fs";
 import path from "path";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
+import { path as ffprobePath } from "ffprobe-static";
 ffmpeg.setFfmpegPath(ffmpegPath!);
+ffmpeg.setFfprobePath(ffprobePath);
 
 interface SceneSegment {
   start: number; // start time in seconds

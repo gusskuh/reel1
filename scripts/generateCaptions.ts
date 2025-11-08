@@ -2,8 +2,12 @@ import fs from "fs";
 import path from "path";
 import OpenAI from "openai";
 import ffmpeg from "fluent-ffmpeg";
+import { path as ffprobePath } from "ffprobe-static";
 import dotenv from "dotenv";
 dotenv.config();
+
+// Configure ffprobe path
+ffmpeg.setFfprobePath(ffprobePath);
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -124,9 +128,4 @@ async function getAudioDuration(file: string): Promise<number> {
   });
 }
 
-// Example run
-async function main() {
-  await generateCaptions("voice.mp3");
-}
-
-main().catch(console.error);
+// Remove standalone execution - this is called from index.ts

@@ -2,6 +2,10 @@
 import fs from "fs";
 import path from "path";
 import ffmpeg from "fluent-ffmpeg";
+import { path as ffprobePath } from "ffprobe-static";
+
+// Configure ffprobe path
+ffmpeg.setFfprobePath(ffprobePath);
 
 /**
  * Create a short vertical reel video with:
