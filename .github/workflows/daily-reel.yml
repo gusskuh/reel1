@@ -5,6 +5,12 @@ on:
     # Run daily at 9:00 AM UTC (adjust timezone as needed)
     - cron: '0 9 * * *'
   workflow_dispatch: # Allow manual triggering
+    inputs:
+      test_mode:
+        description: 'Test mode (skip YouTube upload)'
+        required: false
+        default: 'false'
+        type: boolean
 
 jobs:
   generate-reel:
@@ -30,17 +36,47 @@ jobs:
           echo "PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}" >> .env
           echo "YOUTUBE_CLIENT_ID=${{ secrets.YOUTUBE_CLIENT_ID }}" >> .env
           echo "YOUTUBE_CLIENT_SECRET=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> .env
-          echo "YOUTUBE_REDIRECT_URI=${{ secrets.YOUTUBE_REDIRECT_URI }}" >> .env
-          echo "UPLOAD_TO_YOUTUBE=${{ secrets.UPLOAD_TO_YOUTUBE || 'false' }}" >> .env
+          echo "YOUTUBE_REDIRECT_URI=${{ secrets.YOUTUBE_REDIRECT_URI || 'http://localhost:3000/oauth2callback' }}" >> .env
+          if [ "${{ inputs.test_mode }}" == "true" ]; then
+            echo "UPLOAD_TO_YOUTUBE=false" >> .env
+          else
+            echo "UPLOAD_TO_YOUTUBE=${{ secrets.UPLOAD_TO_YOUTUBE || 'true' }}" >> .env
+          fi
+          echo "✅ .env file created"
+          echo "YouTube upload enabled: $(grep UPLOAD_TO_YOUTUBE .env)"
 
       - name: Setup YouTube token
-        if: ${{ secrets.YOUTUBE_TOKEN_JSON != '' }}
         run: |
-          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > youtube_token.json
+          if [ -n "${{ secrets.YOUTUBE_TOKEN_JSON }}" ]; then
+            echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > youtube_token.json
+            echo "✅ YouTube token configured"
+            echo "Token file created: $(ls -la youtube_token.json)"
+          else
+            echo "❌ ERROR: YOUTUBE_TOKEN_JSON secret is missing!"
+            echo "To enable YouTube upload:"
+            echo "1. Run the script locally: npm run create-reel"
+            echo "2. Authorize YouTube when prompted"
+            echo "3. Copy the contents of youtube_token.json"
+            echo "4. Add it as a secret named YOUTUBE_TOKEN_JSON in GitHub"
+            exit 1
+          fi
 
+      - name: Verify environment
+        run: |
+          echo "Checking environment setup..."
+          if [ -f .env ]; then
+            echo "✅ .env file exists"
+            echo "API keys present: $(grep -c 'API_KEY' .env || echo 0)"
+          else
+            echo "❌ .env file missing!"
+            exit 1
+          fi
+      
       - name: Generate reel
         run: npm run create-reel
         continue-on-error: true
+        env:
+          NODE_ENV: production
 
       - name: Upload video artifact
         if: always()
