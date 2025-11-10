@@ -230,14 +230,29 @@ export function generateVideoMetadata(
   // Create description
   const description = `${script}\n\n📊 Stay updated with the latest financial news!\n\n🔗 Visit us at: valuezai.com\n\n#FinancialNews #StockMarket #Investing`;
 
-  // Generate tags from title and ticker
-  const tags: string[] = ["Financial News", "Stock Market", "Investing"];
+  // Generate comprehensive tags from title, ticker, and keywords
+  const tags: string[] = [
+    "Financial News",
+    "Stock Market",
+    "Investing",
+    "Trading",
+    "Finance",
+    "Markets",
+    "Stocks",
+    "Investment Tips",
+    "Market Analysis",
+    "Financial Education"
+  ];
   if (tickerSymbol) {
-    tags.push(tickerSymbol);
+    tags.push(tickerSymbol, `${tickerSymbol} Stock`, `${tickerSymbol} News`);
   }
-  // Extract keywords from title
-  const titleWords = newsTitle.split(/\s+/).filter(w => w.length > 3);
-  tags.push(...titleWords.slice(0, 5));
+  // Extract keywords from title and script
+  const titleWords = newsTitle.split(/\s+/).filter(w => w.length > 3 && !["News", "Stock", "Market"].includes(w));
+  tags.push(...titleWords.slice(0, 8));
+  
+  // Add script keywords
+  const scriptWords = script.split(/\s+/).filter(w => w.length > 4 && /^[A-Z]/.test(w));
+  tags.push(...scriptWords.slice(0, 5));
 
   return {
     title,

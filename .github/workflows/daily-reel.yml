@@ -37,13 +37,26 @@ jobs:
           echo "YOUTUBE_CLIENT_ID=${{ secrets.YOUTUBE_CLIENT_ID }}" >> .env
           echo "YOUTUBE_CLIENT_SECRET=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> .env
           echo "YOUTUBE_REDIRECT_URI=${{ secrets.YOUTUBE_REDIRECT_URI || 'http://localhost:3000/oauth2callback' }}" >> .env
+          echo "TIKTOK_CLIENT_KEY=${{ secrets.TIKTOK_CLIENT_KEY }}" >> .env
+          echo "TIKTOK_CLIENT_SECRET=${{ secrets.TIKTOK_CLIENT_SECRET }}" >> .env
+          echo "TIKTOK_REDIRECT_URI=${{ secrets.TIKTOK_REDIRECT_URI || 'http://localhost:3000/tiktok_callback' }}" >> .env
+          echo "X_API_KEY=${{ secrets.X_API_KEY }}" >> .env
+          echo "X_API_SECRET=${{ secrets.X_API_SECRET }}" >> .env
+          echo "X_ACCESS_TOKEN=${{ secrets.X_ACCESS_TOKEN }}" >> .env
+          echo "X_ACCESS_TOKEN_SECRET=${{ secrets.X_ACCESS_TOKEN_SECRET }}" >> .env
           if [ "${{ inputs.test_mode }}" == "true" ]; then
             echo "UPLOAD_TO_YOUTUBE=false" >> .env
+            echo "UPLOAD_TO_TIKTOK=false" >> .env
+            echo "UPLOAD_TO_X=false" >> .env
           else
             echo "UPLOAD_TO_YOUTUBE=${{ secrets.UPLOAD_TO_YOUTUBE || 'true' }}" >> .env
+            echo "UPLOAD_TO_TIKTOK=${{ secrets.UPLOAD_TO_TIKTOK || 'false' }}" >> .env
+            echo "UPLOAD_TO_X=${{ secrets.UPLOAD_TO_X || 'false' }}" >> .env
           fi
           echo "✅ .env file created"
           echo "YouTube upload enabled: $(grep UPLOAD_TO_YOUTUBE .env)"
+          echo "TikTok upload enabled: $(grep UPLOAD_TO_TIKTOK .env)"
+          echo "X upload enabled: $(grep UPLOAD_TO_X .env)"
 
       - name: Setup YouTube token
         run: |
@@ -59,6 +72,37 @@ jobs:
             echo "3. Copy the contents of youtube_token.json"
             echo "4. Add it as a secret named YOUTUBE_TOKEN_JSON in GitHub"
             exit 1
+          fi
+
+      - name: Setup TikTok token
+        run: |
+          if [ -n "${{ secrets.TIKTOK_TOKEN_JSON }}" ]; then
+            echo '${{ secrets.TIKTOK_TOKEN_JSON }}' > tiktok_token.json
+            echo "✅ TikTok token configured"
+            echo "Token file created: $(ls -la tiktok_token.json)"
+          else
+            echo "⚠️  TikTok token not provided"
+            echo "To enable TikTok upload:"
+            echo "1. Set up TikTok Developer app (see TIKTOK_SETUP.md)"
+            echo "2. Run the script locally: npm run create-reel"
+            echo "3. Authorize TikTok when prompted"
+            echo "4. Copy the contents of tiktok_token.json"
+            echo "5. Add it as a secret named TIKTOK_TOKEN_JSON in GitHub"
+          fi
+
+      - name: Setup X token
+        run: |
+          if [ -n "${{ secrets.X_TOKEN_JSON }}" ]; then
+            echo '${{ secrets.X_TOKEN_JSON }}' > x_token.json
+            echo "✅ X token configured"
+            echo "Token file created: $(ls -la x_token.json)"
+          else
+            echo "⚠️  X token not provided"
+            echo "To enable X upload:"
+            echo "1. Set up X Developer app (see X_SETUP.md)"
+            echo "2. Get API keys and tokens from X Developer Portal"
+            echo "3. Create x_token.json with oauth_token and oauth_token_secret"
+            echo "4. Add it as a secret named X_TOKEN_JSON in GitHub"
           fi
 
       - name: Verify environment

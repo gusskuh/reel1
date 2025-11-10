@@ -16,7 +16,7 @@ An automated system that generates short financial news reels by:
 - 🎥 **Dynamic Video Scenes**: Multiple scene clips based on script content
 - 📝 **Auto Captions**: Whisper-powered timed captions
 - 📊 **Ticker Badge**: Automatic ticker symbol detection and display
-- 📺 **YouTube Upload**: Automatic upload to your YouTube channel
+- 📺 **Multi-Platform Upload**: Automatic upload to YouTube, TikTok, X (Twitter), and Instagram Reels
 - ⏰ **Scheduled Runs**: GitHub Actions for daily automation
 
 ## Prerequisites
@@ -60,7 +60,11 @@ YOUTUBE_REDIRECT_URI=http://localhost:3000/oauth2callback
 UPLOAD_TO_YOUTUBE=true
 ```
 
-4. For YouTube upload setup, see [YOUTUBE_SETUP.md](./YOUTUBE_SETUP.md)
+4. For platform upload setup, see:
+   - [YOUTUBE_SETUP.md](./YOUTUBE_SETUP.md) - YouTube upload
+   - [TIKTOK_SETUP.md](./TIKTOK_SETUP.md) - TikTok upload
+   - [X_SETUP.md](./X_SETUP.md) - X (Twitter) upload
+   - [INSTAGRAM_SETUP.md](./INSTAGRAM_SETUP.md) - Instagram Reels upload
 
 ## Usage
 
@@ -76,7 +80,7 @@ This will:
 4. Fetch background videos
 5. Generate captions
 6. Create the final video
-7. Upload to YouTube (if enabled)
+7. Upload to YouTube, TikTok, X, and/or Instagram Reels (if enabled)
 
 ### Individual steps:
 ```bash

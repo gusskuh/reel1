@@ -10,6 +10,9 @@ import { generateCaptions } from "./generateCaptions";
 import { generateSceneVideos } from "./fetchSceneVideos";
 import { createDynamicVideo } from "./createDynamicVideo";
 import { uploadToYouTube, generateVideoMetadata } from "./uploadToYouTube";
+import { uploadToTikTok, generateTikTokMetadata } from "./uploadToTikTok";
+import { uploadToX, generateXMetadata } from "./uploadToX";
+import { uploadToInstagram, generateInstagramMetadata } from "./uploadToInstagram";
 
 async function main() {
   try {
@@ -19,7 +22,7 @@ async function main() {
       console.error("❌ No news available.");
       return;
     }
-    console.log(`✅ Found article: ${news.title}\n`);
+    console.log(`✅ Found article: ${JSON.stringify(news)}\n`);
     
     // Extract ticker symbol from title (look for uppercase letters, typically 1-5 chars)
     const tickerMatch = news.title.match(/\b([A-Z]{1,5})\b/);
@@ -93,6 +96,51 @@ async function main() {
       }
     } else {
       console.log("💡 Tip: Set UPLOAD_TO_YOUTUBE=true in .env to auto-upload to YouTube\n");
+    }
+
+    // Optional: Upload to TikTok
+    if (process.env.UPLOAD_TO_TIKTOK === "true") {
+      try {
+        console.log("🎵 Step 8: Uploading to TikTok...");
+        const tiktokMetadata = generateTikTokMetadata(news.title, script, tickerSymbol);
+        const tiktokUrl = await uploadToTikTok(videoPath, tiktokMetadata);
+        console.log(`✅ Uploaded to TikTok: ${tiktokUrl}\n`);
+      } catch (error) {
+        console.error("⚠️  TikTok upload failed:", error);
+        console.log("   Continuing without TikTok upload...\n");
+      }
+    } else {
+      console.log("💡 Tip: Set UPLOAD_TO_TIKTOK=true in .env to auto-upload to TikTok\n");
+    }
+
+    // Optional: Upload to X (Twitter)
+    if (process.env.UPLOAD_TO_X === "true") {
+      try {
+        console.log("🐦 Step 9: Uploading to X (Twitter)...");
+        const xMetadata = generateXMetadata(news.title, script, tickerSymbol);
+        const xUrl = await uploadToX(videoPath, xMetadata);
+        console.log(`✅ Posted to X: ${xUrl}\n`);
+      } catch (error) {
+        console.error("⚠️  X upload failed:", error);
+        console.log("   Continuing without X upload...\n");
+      }
+    } else {
+      console.log("💡 Tip: Set UPLOAD_TO_X=true in .env to auto-post to X\n");
+    }
+
+    // Optional: Upload to Instagram Reels
+    if (process.env.UPLOAD_TO_INSTAGRAM === "true") {
+      try {
+        console.log("📸 Step 10: Uploading to Instagram Reels...");
+        const instagramMetadata = generateInstagramMetadata(news.title, script, tickerSymbol);
+        const instagramUrl = await uploadToInstagram(videoPath, instagramMetadata);
+        console.log(`✅ Posted to Instagram: ${instagramUrl}\n`);
+      } catch (error) {
+        console.error("⚠️  Instagram upload failed:", error);
+        console.log("   Continuing without Instagram upload...\n");
+      }
+    } else {
+      console.log("💡 Tip: Set UPLOAD_TO_INSTAGRAM=true in .env to auto-post to Instagram Reels\n");
     }
 
     console.log("\n✅ All done! Your automated financial news reel is ready 🎉");

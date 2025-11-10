@@ -11,6 +11,15 @@ node_modules/
 # YouTube OAuth token (contains sensitive credentials)
 youtube_token.json
 
+# TikTok OAuth token (contains sensitive credentials)
+tiktok_token.json
+
+# X (Twitter) OAuth token (contains sensitive credentials)
+x_token.json
+
+# Instagram OAuth token (contains sensitive credentials)
+instagram_token.json
+
 # Generated videos and media files
 *.mp4
 *.mp3
