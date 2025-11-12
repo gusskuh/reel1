@@ -9,7 +9,9 @@
     "generate-script": "tsx scripts/generateScript.ts",
     "generate-speech": "tsx scripts/generateSpeech.ts",
     "create-reel": "tsx scripts/index.ts",
-    "test-x-upload": "tsx scripts/testXUpload.ts"
+    "test-x-upload": "tsx scripts/testXUpload.ts",
+    "test-tiktok-stats": "tsx scripts/testTikTokUserStats.ts",
+    "test-tiktok-videos": "tsx scripts/testTikTokVideoList.ts"
   },
   "keywords": [],
   "author": "",
