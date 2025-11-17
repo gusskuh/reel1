@@ -11,7 +11,8 @@
     "create-reel": "tsx scripts/index.ts",
     "test-x-upload": "tsx scripts/testXUpload.ts",
     "test-tiktok-stats": "tsx scripts/testTikTokUserStats.ts",
-    "test-tiktok-videos": "tsx scripts/testTikTokVideoList.ts"
+    "test-tiktok-videos": "tsx scripts/testTikTokVideoList.ts",
+    "refresh-youtube-token": "tsx scripts/refreshYouTubeToken.ts"
   },
   "keywords": [],
   "author": "",
