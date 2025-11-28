@@ -48,20 +48,63 @@ async function authorize(): Promise<any> {
       const token = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf8"));
       oauth2Client.setCredentials(token);
       
-      // Set up automatic token refresh
+      // Check if token is expired or about to expire (within 5 minutes)
+      const now = Date.now();
+      const expiryDate = token.expiry_date;
+      const isExpired = expiryDate && expiryDate < (now + 5 * 60 * 1000); // 5 min buffer
+      
+      if (isExpired && token.refresh_token) {
+        console.log("🔄 Access token expired, attempting to refresh...");
+        try {
+          // Explicitly refresh the token
+          const { credentials } = await oauth2Client.refreshAccessToken();
+          oauth2Client.setCredentials(credentials);
+          
+          // Update stored token
+          const updatedToken = {
+            ...token,
+            access_token: credentials.access_token,
+            expiry_date: credentials.expiry_date,
+          };
+          if (credentials.refresh_token) {
+            updatedToken.refresh_token = credentials.refresh_token;
+          }
+          fs.writeFileSync(TOKEN_PATH, JSON.stringify(updatedToken));
+          console.log("✅ Token refreshed successfully");
+        } catch (refreshError: any) {
+          console.error("❌ Failed to refresh token:", refreshError.message);
+          if (refreshError.message?.includes("invalid_grant") || 
+              refreshError.message?.includes("Token has been expired") ||
+              refreshError.message?.includes("Token has been revoked")) {
+            throw new Error(
+              "Refresh token has expired or been revoked. Please regenerate the token:\n" +
+              "1. Delete youtube_token.json (or update YOUTUBE_TOKEN_JSON secret in GitHub)\n" +
+              "2. Run: npm run refresh-youtube-token\n" +
+              "3. Update the GitHub secret with the new token"
+            );
+          }
+          throw refreshError;
+        }
+      }
+      
+      // Set up automatic token refresh listener for future refreshes
       oauth2Client.on("tokens", (tokens) => {
         // When tokens are refreshed, update the stored token
+        const currentToken = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf8"));
         if (tokens.refresh_token) {
-          token.refresh_token = tokens.refresh_token;
+          currentToken.refresh_token = tokens.refresh_token;
         }
-        token.access_token = tokens.access_token;
-        token.expiry_date = tokens.expiry_date;
-        fs.writeFileSync(TOKEN_PATH, JSON.stringify(token));
+        currentToken.access_token = tokens.access_token;
+        currentToken.expiry_date = tokens.expiry_date;
+        fs.writeFileSync(TOKEN_PATH, JSON.stringify(currentToken));
         console.log("🔄 YouTube token refreshed automatically");
       });
       
       return oauth2Client;
-    } catch (error) {
+    } catch (error: any) {
+      if (error.message?.includes("Refresh token has expired")) {
+        throw error; // Re-throw our custom error
+      }
       console.warn("⚠️  Error loading token file, will request new token");
       // If token file is corrupted, get a new one
       return getNewToken(oauth2Client);
@@ -235,15 +278,17 @@ export async function uploadToYouTube(
           errorData.error_description?.includes("Token has been expired") ||
           errorData.error_description?.includes("Token has been revoked")) {
         console.error("\n⚠️  YouTube token has expired or been revoked!");
-        console.error("   To fix this:");
-        console.error("   1. Delete youtube_token.json locally (or the secret in GitHub)");
-        console.error("   2. Run: npm run create-reel");
-        console.error("   3. Re-authorize YouTube when prompted");
-        console.error("   4. Update YOUTUBE_TOKEN_JSON secret in GitHub with the new token");
-        console.error("\n   For GitHub Actions:");
-        console.error("   - Go to repository Settings → Secrets → Actions");
-        console.error("   - Update YOUTUBE_TOKEN_JSON with the new token");
-        throw new Error("YouTube token expired - please regenerate the token (see instructions above)");
+        console.error("   The refresh token may have expired (they expire after ~6 months).");
+        console.error("\n   To fix this:");
+        console.error("   1. Run locally: npm run refresh-youtube-token");
+        console.error("   2. Re-authorize YouTube when prompted");
+        console.error("   3. Copy the new token from youtube_token.json");
+        console.error("   4. Update YOUTUBE_TOKEN_JSON secret in GitHub:");
+        console.error("      - Go to repository Settings → Secrets → Actions");
+        console.error("      - Update YOUTUBE_TOKEN_JSON with the new token JSON");
+        console.error("\n   Note: Automatic token refresh only works if the refresh token is still valid.");
+        console.error("   If you see this error, the refresh token itself has likely expired.");
+        throw new Error("YouTube token expired - refresh token invalid, please regenerate (see instructions above)");
       }
       
       throw new Error(`Upload failed: ${JSON.stringify(errorData.error || errorData)}`);
