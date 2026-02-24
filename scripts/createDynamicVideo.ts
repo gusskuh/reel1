@@ -56,10 +56,8 @@ export async function createDynamicVideo(options: {
   const scenesToUse = availableScenes.slice(0, neededScenes);
   console.log(`🎬 Using ${scenesToUse.length} scene(s) for ${audioDuration.toFixed(2)}s video`);
 
-  // 1️⃣ Trim each scene to exactly 5 seconds and create concat list
+  // 1️⃣ Trim each scene - use trim filter to avoid VFR/timestamp issues in source clips
   const trimmedScenes: string[] = [];
-  const concatListPath = path.resolve("concat_list.txt");
-  const concatEntries: string[] = [];
 
   let totalVideoDuration = 0;
   for (let i = 0; i < scenesToUse.length; i++) {
@@ -81,22 +79,26 @@ export async function createDynamicVideo(options: {
     console.log(`✂️  Trimming scene ${i + 1} to ${duration.toFixed(2)}s... (total so far: ${totalVideoDuration.toFixed(2)}s)`);
     
     await new Promise<void>((resolve, reject) => {
+      // Use trim filter for precise cutting - avoids VFR/timestamp issues in source clips
+      const scalePad = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
+      const trimFilter = `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,${scalePad}`;
       ffmpeg(scene.clipPath)
-        .setStartTime(0)
-        .setDuration(duration)
         .videoCodec("libx264")
-        .audioCodec("aac")
         .outputOptions([
+          "-an",
           "-pix_fmt yuv420p",
-          "-g 30", // Keyframe interval
-          "-vf scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
+          "-r 30", // Force 30fps - normalizes variable framerate sources
+          "-vsync cfr",
+          "-preset fast",
+          "-crf 23",
+          "-g 15", // Keyframe every 0.5s
+          "-vf", trimFilter,
         ])
         .save(trimmedPath)
         .on("end", () => {
           // Verify the trimmed file exists and is valid
           if (fs.existsSync(trimmedPath) && fs.statSync(trimmedPath).size > 0) {
             trimmedScenes.push(trimmedPath);
-            concatEntries.push(`file '${path.resolve(trimmedPath)}'`);
             resolve();
           } else {
             reject(new Error(`Trimmed scene ${i + 1} is invalid or empty`));
@@ -109,31 +111,32 @@ export async function createDynamicVideo(options: {
     });
   }
 
-  // Write concat list
-  fs.writeFileSync(concatListPath, concatEntries.join("\n"));
-
-  console.log("🎞️  Concatenating trimmed scene clips...");
+  console.log("🎞️  Concatenating with concat filter (smooth, no freezing - ~2-4 min)...");
   const combinedPath = "combined_scenes.mp4";
 
-  // 2️⃣ Concatenate trimmed scenes with proper re-encoding
-  // Re-encode to ensure compatibility and avoid corruption
+  // 2️⃣ Concat filter - decodes each clip, joins raw frames, re-encodes. Guarantees smooth playback.
+  // Uses ultrafast preset to minimize wait time.
   await new Promise<void>((resolve, reject) => {
-    ffmpeg()
-      .input(concatListPath)
-      .inputOptions(["-f concat", "-safe 0"])
-      .videoCodec("libx264")
-      .audioCodec("aac")
+    const cmd = ffmpeg();
+    trimmedScenes.forEach(p => cmd.input(p));
+    const inputLabels = trimmedScenes.map((_, i) => `[${i}:v]`).join("");
+    const concatFilter = `${inputLabels}concat=n=${trimmedScenes.length}:v=1:a=0[outv]`;
+
+    cmd
+      .complexFilter(concatFilter)
       .outputOptions([
+        "-map [outv]",
+        "-c:v libx264",
+        "-an",
         "-pix_fmt yuv420p",
-        "-preset fast", // Faster encoding
-        "-crf 23", // Good quality
-        "-g 30", // Keyframe interval for better seeking
-        "-movflags +faststart", // Enable fast start for web playback
+        "-preset ultrafast", // Fastest encode - ~2-4 min for 45s video
+        "-crf 26",
+        "-g 15",
+        "-movflags +faststart",
       ])
       .save(combinedPath)
       .on("end", () => {
-        console.log("✅ Scenes combined.");
-        // Verify the combined file is valid
+        console.log("✅ Scenes combined (smooth playback).");
         if (!fs.existsSync(combinedPath) || fs.statSync(combinedPath).size === 0) {
           reject(new Error("Combined video file is invalid or empty"));
           return;
@@ -250,7 +253,6 @@ export async function createDynamicVideo(options: {
           if (fs.existsSync(f)) fs.unlinkSync(f);
         });
         if (fs.existsSync(combinedPath)) fs.unlinkSync(combinedPath);
-        if (fs.existsSync(concatListPath)) fs.unlinkSync(concatListPath);
         // Clean up ticker text file if it exists
         const tickerTextFile = path.resolve("ticker_text.txt");
         if (fs.existsSync(tickerTextFile)) fs.unlinkSync(tickerTextFile);
