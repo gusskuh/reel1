@@ -52,7 +52,12 @@ ticker_text.txt
 *~
 
 # Build outputs
+.next/
 dist/
 build/
 *.js.map
+
+# MVP: generated reel output and temp pipeline dirs
+uploads/
+tmp/
 

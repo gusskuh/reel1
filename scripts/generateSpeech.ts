@@ -15,10 +15,12 @@ const client = new OpenAI({
  * @param filename - Optional output filename (defaults to 'voice.mp3').
  * @param voice - Optional voice style ("alloy", "verse", "charlie", etc.)
  */
+export type TTSVoice = "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer";
+
 export async function generateSpeech(
   text: string,
   filename = "voice.mp3",
-  voice: "alloy" | "verse" | "charlie" | "cove" | "ash" | "coral" = "alloy"
+  voice: TTSVoice = "alloy"
 ): Promise<string> {
   const outputPath = path.resolve(filename);
 

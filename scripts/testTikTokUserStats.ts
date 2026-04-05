@@ -13,23 +13,57 @@ const BASE_URL = "https://open.tiktokapis.com";
  * This shows how the app retrieves user statistics from TikTok
  */
 async function testUserStats() {
-  // Load token
-  if (!fs.existsSync(TOKEN_PATH)) {
-    console.error("❌ No token found. Please authorize first by running the upload script.");
-    console.log("💡 Run: npm run create-reel (or your TikTok upload script)");
-    process.exit(1);
-  }
+  console.log("\n" + "╔══════════════════════════════════════════════════════════════╗");
+  console.log("║     Testing user.info.stats Scope - Demo Video            ║");
+  console.log("╚══════════════════════════════════════════════════════════════╝\n");
+  console.log("📋 API Call Details:");
+  console.log("   • Endpoint: GET /v2/user/info/");
+  console.log("   • Scope: user.info.stats");
+  console.log("   • Purpose: Retrieve user statistics (followers, video count, etc.)\n");
 
-  const tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf8"));
-  const accessToken = tokenData.access_token;
+  // Check for token
+  let accessToken: string | null = null;
+  if (fs.existsSync(TOKEN_PATH)) {
+    try {
+      const tokenData = JSON.parse(fs.readFileSync(TOKEN_PATH, "utf8"));
+      accessToken = tokenData.access_token;
+    } catch (e) {
+      // Token file exists but invalid
+    }
+  }
 
   if (!accessToken) {
-    console.error("❌ No access token found in token file.");
-    process.exit(1);
+    console.log("⚠️  DEMO MODE: No valid token found");
+    console.log("   (This is expected - OAuth will work after TikTok approves the app)\n");
+    console.log("📝 Showing API call structure for demo purposes:\n");
+    console.log("═".repeat(65));
+    console.log("API Request:");
+    console.log("═".repeat(65));
+    console.log(`GET ${BASE_URL}/v2/user/info/?fields=display_name,bio_description,avatar_url,follower_count,following_count,likes_count,video_count`);
+    console.log("Headers:");
+    console.log(`  Authorization: Bearer <access_token>`);
+    console.log("\n" + "═".repeat(65));
+    console.log("Expected Response (after app approval):");
+    console.log("═".repeat(65));
+    console.log(JSON.stringify({
+      data: {
+        user: {
+          display_name: "Your TikTok Account",
+          follower_count: 1234,
+          following_count: 567,
+          likes_count: 8901,
+          video_count: 42,
+          avatar_url: "https://..."
+        }
+      }
+    }, null, 2));
+    console.log("═".repeat(65) + "\n");
+    console.log("💡 This demonstrates how the user.info.stats scope works.");
+    console.log("   Once TikTok approves the app, this will return real data.\n");
+    return;
   }
 
-  console.log("📊 Testing user.info.stats scope...");
-  console.log("🔗 Calling TikTok API: GET /v2/user/info/\n");
+  console.log("🔄 Making API request...\n");
 
   try {
     const response = await axios.get(
@@ -41,10 +75,12 @@ async function testUserStats() {
       }
     );
 
-    console.log("✅ User Statistics Retrieved Successfully!\n");
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("✅ API Response Received Successfully!\n");
+    console.log("═".repeat(65));
+    console.log("📊 User Statistics Data:");
+    console.log("═".repeat(65));
     console.log(JSON.stringify(response.data, null, 2));
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    console.log("═".repeat(65) + "\n");
     
     if (response.data.data?.user) {
       const user = response.data.data.user;

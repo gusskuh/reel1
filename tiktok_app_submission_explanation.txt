@@ -1,0 +1,16 @@
+**Products:**
+
+**Login Kit:** Required prerequisite for Content Posting API. Enables OAuth 2.0 authentication to obtain access tokens for automated API requests.
+
+**Content Posting API:** Core product for automated financial news reel posting. Uploads AI-generated video reels directly to TikTok as part of multi-platform content distribution.
+
+**Scopes:**
+
+**user.info.basic:** Retrieves basic account info during OAuth flow and verifies TikTok account is active before posting.
+
+**user.info.stats:** Retrieves account statistics (followers, video count, engagement) to monitor account health and track performance.
+
+**video.list:** Retrieves uploaded video list to verify successful uploads, check status, and manage content library with metadata.
+
+**video.upload:** Primary scope for automated video posting. Uploads financial news reels (MP4, 1080x1920) with titles, descriptions, and hashtags via chunked upload.
+

@@ -29,14 +29,17 @@ async function getAudioDuration(file: string): Promise<number> {
  * Creates a full vertical reel with multiple scene clips + audio + captions
  * Each scene is trimmed to 5 seconds, and the final video matches audio duration
  */
+export type SubtitleSize = "s" | "m" | "l";
+
 export async function createDynamicVideo(options: {
   scenes: SceneSegment[];
   voicePath: string;
   captionFile?: string;
   tickerSymbol?: string;
   output?: string;
+  subtitleSize?: SubtitleSize;
 }) {
-  const { scenes, voicePath, captionFile, tickerSymbol, output = "dynamic_reel.mp4" } = options;
+  const { scenes, voicePath, captionFile, tickerSymbol, output = "dynamic_reel.mp4", subtitleSize = "s" } = options;
 
   if (!fs.existsSync(voicePath)) throw new Error(`Missing voice file: ${voicePath}`);
 
@@ -241,7 +244,7 @@ export async function createDynamicVideo(options: {
         "-movflags +faststart", // Enable fast start
         "-t", audioDuration.toFixed(3), // Force exact audio duration
         "-filter_complex",
-        buildFilterComplex(captionFile, tickerSymbol),
+        buildFilterComplex(captionFile, tickerSymbol, subtitleSize),
         "-map [v]", // Map the filtered video
         "-map 1:a", // Map audio from second input (voice)
       ])
@@ -280,7 +283,9 @@ function escapeDrawText(text: string): string {
     .replace(/%/g, "\\%");  // Escape percent signs
 }
 
-function buildFilterComplex(captionFile?: string, tickerSymbol?: string): string {
+const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = { s: 14, m: 20, l: 28 };
+
+function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitleSize: SubtitleSize = "m"): string {
   let filterChain = "[0:v]scale=1080:1920";
   
   // Add ticker badge at the top if provided
@@ -295,8 +300,9 @@ function buildFilterComplex(captionFile?: string, tickerSymbol?: string): string
   
   // Add subtitles if available
   if (captionFile && fs.existsSync(captionFile)) {
+    const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
     const escapedPath = path.resolve(captionFile).replace(/:/g, "\\:").replace(/'/g, "\\'");
-    filterChain += `,subtitles='${escapedPath}':force_style='FontSize=18,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=60'`;
+    filterChain += `,subtitles='${escapedPath}':force_style='FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=60'`;
   }
   
   filterChain += "[v]";

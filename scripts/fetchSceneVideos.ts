@@ -5,13 +5,15 @@ dotenv.config();
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function generateSceneVideos(script: string) {
+export async function generateSceneVideos(script: string, defaultKeyword = "motivation") {
   const prompt = `
 Split this narration into short visual scenes (max 5 seconds each).
-For each scene, return JSON with "text" (narration snippet) and "keywords" (visual topics).
-Example: [{"text": "NVIDIA stock rose", "keywords": ["NVIDIA logo", "tech stocks"]}]
+For each scene, return JSON with "text" (narration snippet) and "keywords" (visual topics for stock footage).
+Use Pexels-friendly keywords: nature, city, success, teamwork, sunrise, etc. for inspirational content; or stocks, finance, charts for financial.
 Narration:
 ${script}
+
+Return JSON in format: {"scenes": [{"text": "...", "keywords": ["keyword1", "keyword2"]}, ...]}
 `;
 
   const response = await client.chat.completions.create({
@@ -37,7 +39,7 @@ ${script}
 
   // Fetch video clips for each scene
   for (const [i, scene] of scenes.entries()) {
-    const keyword = scene.keywords?.[0] || scene.keyword || "financial news";
+    const keyword = scene.keywords?.[0] || scene.keyword || defaultKeyword;
     console.log(`🎥 Fetching clip for scene ${i + 1}: ${keyword}`);
     try {
       await fetchBackgroundVideo(keyword, `scene_${i + 1}.mp4`);

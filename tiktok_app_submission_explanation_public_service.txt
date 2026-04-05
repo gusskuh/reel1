@@ -1,0 +1,38 @@
+**App Purpose:**
+ReelGen is a public-facing web platform that enables users to generate AI-powered financial news video content and post it to their own TikTok accounts. Users authenticate with their TikTok accounts, generate personalized content, and publish directly to their channels.
+
+**Products:**
+
+**Login Kit:** Enables OAuth 2.0 authentication so users can securely connect their TikTok accounts to the platform. Users authenticate once and can then generate and post content to their own TikTok accounts.
+
+**Content Posting API:** Allows users to publish AI-generated financial news reels directly to their TikTok accounts through the platform. Users maintain full control over their content and posting schedule.
+
+**Scopes:**
+
+**user.info.basic:** Used during OAuth flow to retrieve the user's basic TikTok account information (username, profile picture) to personalize their experience and confirm account connection.
+
+**user.info.stats:** Displays account statistics (follower count, video count, engagement metrics) to users so they can track their TikTok account performance within the platform dashboard.
+
+**video.list:** Allows users to view and manage their uploaded TikTok videos through the platform interface, including checking upload status and viewing video metadata.
+
+**video.upload:** Enables users to upload AI-generated financial news video reels (MP4 format, 1080x1920 resolution) directly to their TikTok accounts with custom titles, descriptions, and hashtags.
+
+**Use Case:**
+Content creators, financial educators, and social media managers use ReelGen to:
+- Generate professional financial news video content using AI
+- Automate content creation workflow
+- Post to their TikTok accounts without manual video editing
+- Maintain consistent posting schedule with quality content
+
+**User Flow:**
+1. User visits ReelGen platform (public website)
+2. User clicks "Connect TikTok Account" and authenticates via OAuth
+3. Platform retrieves user's account info and stats (user.info.basic, user.info.stats)
+4. User generates a financial news reel using AI tools
+5. User reviews and customizes the video
+6. User clicks "Post to TikTok" - video uploads to their account (video.upload)
+7. User can view their posted videos in the platform dashboard (video.list)
+
+**Sandbox Environment:**
+All testing and demonstration is performed using TikTok's sandbox environment to ensure compliance and proper integration testing before production use.
+

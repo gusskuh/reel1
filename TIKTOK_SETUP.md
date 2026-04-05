@@ -48,9 +48,10 @@ This guide will help you set up automatic TikTok uploads for your generated reel
 
 1. In your app settings, go to **Basic Information**
 2. Note your **Client Key** and **Client Secret** (you'll need these)
-3. Add **Redirect URI**:
-   - For local development: `http://localhost:3000/tiktok_callback`
-   - For production: Your actual callback URL
+3. Add **Redirect URI** (must match exactly; register every URL you use):
+   - **Next.js web app (Connect TikTok on the site):**  
+     `http://localhost:3000/api/tiktok/callback` (local) and `https://YOUR_DOMAIN/api/tiktok/callback` (production)
+   - **CLI / `npm run create-reel` (legacy):** `http://localhost:3000/tiktok_callback` if you still use that flow
 4. Request **Scopes** (after adding Content Posting API product):
    - `user.info.stats` - User statistics and account information
    - `video.list` - List and manage uploaded videos
@@ -148,9 +149,14 @@ Add these variables to your `.env` file:
 # TikTok Upload Settings
 TIKTOK_CLIENT_KEY=your_client_key_here
 TIKTOK_CLIENT_SECRET=your_client_secret_here
-TIKTOK_REDIRECT_URI=http://localhost:3000/tiktok_callback
+# Must match a redirect URI registered in the Developer Portal (see Step 4)
+TIKTOK_REDIRECT_URI=http://localhost:3000/api/tiktok/callback
+# Required for the Next.js app: encrypts the TikTok token cookie (min 16 chars; use e.g. openssl rand -hex 32)
+TIKTOK_SESSION_SECRET=your_long_random_secret
 UPLOAD_TO_TIKTOK=true
 ```
+
+For **production**, set `TIKTOK_REDIRECT_URI` to your public URL, e.g. `https://valuezai.com/api/tiktok/callback`, and add that same URL in the TikTok portal.
 
 Replace `your_client_key_here` and `your_client_secret_here` with the values from Step 3.
 
