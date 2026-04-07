@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import GeneratingStatus from "./components/GeneratingStatus";
 
 const POLL_INTERVAL_MS = 5000;
+/** Retries when host returns 502/empty body (OOM/restart on small instances). */
+const MAX_JOB_POLL_TRANSIENT_FAILURES = 18;
 
 type JobStatus = "pending" | "processing" | "completed" | "failed";
 
@@ -154,20 +156,77 @@ export default function Home() {
       setJobId(id);
       setStatus("processing");
 
+      let transientFailures = 0;
       const poll = async () => {
-        const j = await fetch(`/api/jobs/${id}`).then((r) => r.json());
-        setStatus(j.status);
-        if (j.status === "completed" && j.videoUrl) {
-          setVideoUrl(j.videoUrl);
-          setLoading(false);
-          return;
+        try {
+          const r = await fetch(`/api/jobs/${id}`);
+          const text = await r.text();
+
+          if (!r.ok) {
+            if (r.status === 404) {
+              setError(
+                "Job not found (server may have restarted). Try generating again."
+              );
+              setLoading(false);
+              return;
+            }
+            if (r.status >= 500) {
+              transientFailures++;
+              if (transientFailures >= MAX_JOB_POLL_TRANSIENT_FAILURES) {
+                setError(
+                  "Server stopped responding while checking status. Heavy video work often needs more RAM—try a larger Render instance, or refresh and try again."
+                );
+                setLoading(false);
+                return;
+              }
+              setTimeout(poll, POLL_INTERVAL_MS);
+              return;
+            }
+            setError(`Status check failed (${r.status})`);
+            setLoading(false);
+            return;
+          }
+
+          let j: { status: JobStatus; videoUrl?: string; error?: string };
+          try {
+            j = text
+              ? (JSON.parse(text) as typeof j)
+              : { status: "processing" };
+          } catch {
+            transientFailures++;
+            if (transientFailures >= MAX_JOB_POLL_TRANSIENT_FAILURES) {
+              setError(
+                "Could not read job status. Refresh the page—the reel may still finish on the server."
+              );
+              setLoading(false);
+              return;
+            }
+            setTimeout(poll, POLL_INTERVAL_MS);
+            return;
+          }
+
+          transientFailures = 0;
+          setStatus(j.status);
+          if (j.status === "completed" && j.videoUrl) {
+            setVideoUrl(j.videoUrl);
+            setLoading(false);
+            return;
+          }
+          if (j.status === "failed") {
+            setError(j.error || "Generation failed");
+            setLoading(false);
+            return;
+          }
+          setTimeout(poll, POLL_INTERVAL_MS);
+        } catch {
+          transientFailures++;
+          if (transientFailures >= MAX_JOB_POLL_TRANSIENT_FAILURES) {
+            setError("Network error while polling. Check your connection and refresh.");
+            setLoading(false);
+            return;
+          }
+          setTimeout(poll, POLL_INTERVAL_MS);
         }
-        if (j.status === "failed") {
-          setError(j.error || "Generation failed");
-          setLoading(false);
-          return;
-        }
-        setTimeout(poll, POLL_INTERVAL_MS);
       };
       poll();
     } catch (err) {
