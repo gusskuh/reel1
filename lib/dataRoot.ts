@@ -1,5 +1,7 @@
 import path from "path";
 
+// All upload and temp paths should go through this module so deploy targets (e.g. Vercel) stay writable.
+
 /**
  * Writable base for uploads/ and pipeline tmp dirs.
  * Vercel serverless: only /tmp is writable — using cwd throws EROFS.
