@@ -7,6 +7,17 @@ const POLL_INTERVAL_MS = 5000;
 /** Retries when host returns 502/empty body (OOM/restart on small instances). */
 const MAX_JOB_POLL_TRANSIENT_FAILURES = 18;
 
+/** Avoids "Unexpected end of JSON input" when the proxy returns 502 with an empty body. */
+async function readJsonBody<T>(r: Response): Promise<T | null> {
+  const text = await r.text();
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 type JobStatus = "pending" | "processing" | "completed" | "failed";
 
 type RateLimitInfo = {
@@ -67,7 +78,12 @@ export default function Home() {
     try {
       const r = await fetch("/api/tiktok/status");
       if (!r.ok) return;
-      const d = await r.json();
+      const d = await readJsonBody<{
+        configured?: boolean;
+        connected?: boolean;
+        displayName?: string;
+      }>(r);
+      if (!d) return;
       setTiktokConfigured(d.configured === true);
       setTiktokConnected(!!d.connected);
       setTiktokDisplayName(d.displayName);
@@ -81,7 +97,13 @@ export default function Home() {
     try {
       const r = await fetch("/api/rate-limit");
       if (!r.ok) return;
-      const data = await r.json();
+      const data = await readJsonBody<{
+        used: number;
+        remaining: number;
+        limit: number;
+        resetAt: number | null;
+      }>(r);
+      if (!data) return;
       setRateLimit({
         used: data.used,
         remaining: data.remaining,
@@ -137,13 +159,24 @@ export default function Home() {
         }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const errBody = await readJsonBody<{ error?: string }>(res);
         if (res.status === 429) {
           await refreshRateLimit();
         }
-        throw new Error(data.error || `Request failed: ${res.status}`);
+        throw new Error(errBody?.error || `Request failed: ${res.status}`);
       }
-      const data = await res.json();
+      const data = await readJsonBody<{
+        jobId: string;
+        rateLimit?: {
+          used: number;
+          remaining: number;
+          limit: number;
+          resetAt?: number | null;
+        };
+      }>(res);
+      if (!data?.jobId) {
+        throw new Error("Empty or invalid response from server. Try again.");
+      }
       const { jobId: id, rateLimit: rl } = data;
       if (rl) {
         setRateLimit({
@@ -246,7 +279,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId }),
       });
-      const data = await r.json().catch(() => ({}));
+      const data = (await readJsonBody<{ error?: string; shareUrl?: string }>(
+        r
+      )) ?? {};
       if (!r.ok) throw new Error(data.error || `Publish failed (${r.status})`);
       if (data.shareUrl) setTiktokShareUrl(data.shareUrl);
     } catch (e) {
