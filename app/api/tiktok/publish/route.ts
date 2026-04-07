@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+import { getUploadsDir } from "@/lib/dataRoot";
 import { getJob } from "@/lib/jobs";
 import {
   ensureValidAccessToken,
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const videoPath = path.join(process.cwd(), "uploads", `${jobId}.mp4`);
+  const videoPath = path.join(getUploadsDir(), `${jobId}.mp4`);
   if (!fs.existsSync(videoPath)) {
     return NextResponse.json(
       { error: "Video file missing on server." },

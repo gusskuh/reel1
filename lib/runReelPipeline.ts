@@ -9,6 +9,7 @@ import dotenv from "dotenv";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
+import { getPipelineTmpRoot } from "./dataRoot";
 import { getContentByNiche, type Niche } from "./contentByNiche";
 import { generateReelScript } from "../scripts/generateScript";
 import { generateSpeech } from "../scripts/generateSpeech";
@@ -31,7 +32,7 @@ export interface RunReelPipelineResult {
 export async function runReelPipeline(options?: RunReelPipelineOptions | string): Promise<RunReelPipelineResult> {
   const opts = typeof options === "string" ? { workDir: options } : options ?? {};
   const { workDir, voice = "alloy", subtitleSize = "m", niche = "financial" } = opts;
-  const resolvedWorkDir = workDir ?? path.join(process.cwd(), "tmp", randomUUID());
+  const resolvedWorkDir = workDir ?? path.join(getPipelineTmpRoot(), randomUUID());
   if (!fs.existsSync(resolvedWorkDir)) {
     fs.mkdirSync(resolvedWorkDir, { recursive: true });
   }

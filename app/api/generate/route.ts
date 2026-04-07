@@ -5,6 +5,11 @@ import { createJob, deleteJob, setJob } from "@/lib/jobs";
 import { runReelPipeline } from "@/lib/runReelPipeline";
 import { checkRateLimit, getRateLimitStatus } from "@/lib/rateLimit";
 import { isJobIdString, removeReelUploadFile } from "@/lib/reelCleanup";
+import { getUploadsDir } from "@/lib/dataRoot";
+
+export const runtime = "nodejs";
+/** Vercel / Render: allow long pipeline (requires Pro on Vercel for >60s). */
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const ip =
@@ -58,13 +63,13 @@ export async function POST(req: Request) {
   const jobId = createJob({ niche });
   setJob(jobId, { status: "processing" });
 
-  const uploadsDir = path.join(process.cwd(), "uploads");
+  const uploadsDir = getUploadsDir();
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
   const destPath = path.join(uploadsDir, `${jobId}.mp4`);
 
-  runReelPipeline({ voice, subtitleSize, niche })
+  const pipelinePromise = runReelPipeline({ voice, subtitleSize, niche })
     .then(async ({ videoPath, workDir }) => {
       fs.copyFileSync(videoPath, destPath);
       try {
@@ -84,6 +89,11 @@ export async function POST(req: Request) {
         error: err instanceof Error ? err.message : "Pipeline failed",
       });
     });
+
+  if (process.env.VERCEL) {
+    const { waitUntil } = await import("@vercel/functions");
+    waitUntil(pipelinePromise);
+  }
 
   const rateLimit = getRateLimitStatus(ip);
   return NextResponse.json({ jobId, rateLimit }, { status: 202 });

@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { Readable } from "stream";
 import { getJob } from "@/lib/jobs";
+import { getUploadsDir } from "@/lib/dataRoot";
 
 export async function GET(
   _req: Request,
@@ -14,7 +15,7 @@ export async function GET(
     return NextResponse.json({ error: "Video not found" }, { status: 404 });
   }
 
-  const videoPath = path.join(process.cwd(), "uploads", `${id}.mp4`);
+  const videoPath = path.join(getUploadsDir(), `${id}.mp4`);
   if (!fs.existsSync(videoPath)) {
     return NextResponse.json({ error: "Video file not found" }, { status: 404 });
   }

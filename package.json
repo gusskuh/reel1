@@ -22,6 +22,7 @@
   "license": "ISC",
   "dependencies": {
     "@types/fluent-ffmpeg": "^2.1.28",
+    "@vercel/functions": "^2.2.13",
     "axios": "^1.13.1",
     "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
