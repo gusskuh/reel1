@@ -21,6 +21,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@upstash/redis": "^1.35.0",
     "@types/fluent-ffmpeg": "^2.1.28",
     "@vercel/functions": "^2.2.13",
     "axios": "^1.13.1",

@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const job = getJob(jobId);
+  const job = await getJob(jobId);
   if (!job || job.status !== "completed") {
     return NextResponse.json(
       { error: "Video not ready or job not found." },

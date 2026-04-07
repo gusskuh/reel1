@@ -57,11 +57,11 @@ export async function POST(req: Request) {
 
   if (previousJobId) {
     removeReelUploadFile(previousJobId);
-    deleteJob(previousJobId);
+    await deleteJob(previousJobId);
   }
 
-  const jobId = createJob({ niche });
-  setJob(jobId, { status: "processing" });
+  const jobId = await createJob({ niche });
+  await setJob(jobId, { status: "processing" });
 
   const uploadsDir = getUploadsDir();
   if (!fs.existsSync(uploadsDir)) {
@@ -77,14 +77,14 @@ export async function POST(req: Request) {
       } catch (e) {
         console.error("Failed to remove pipeline work dir:", e);
       }
-      setJob(jobId, {
+      await setJob(jobId, {
         status: "completed",
         videoUrl: `/api/videos/${jobId}`,
       });
     })
-    .catch((err) => {
+    .catch(async (err) => {
       console.error("Pipeline failed:", err);
-      setJob(jobId, {
+      await setJob(jobId, {
         status: "failed",
         error: err instanceof Error ? err.message : "Pipeline failed",
       });
