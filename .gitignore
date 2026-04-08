@@ -57,6 +57,9 @@ dist/
 build/
 *.js.map
 
+# TypeScript incremental cache (local; regenerates on tsc / IDE)
+*.tsbuildinfo
+
 # MVP: generated reel output and temp pipeline dirs
 uploads/
 tmp/

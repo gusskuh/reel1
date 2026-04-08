@@ -316,6 +316,11 @@ function escapeDrawText(text: string): string {
 
 const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = { s: 14, m: 20, l: 28 };
 
+/** Commas inside filter values must be escaped as \, or the graph splits and ffmpeg reports "Filter not found". */
+function escapeCommasInFilterValue(s: string): string {
+  return s.replace(/\\/g, "\\\\").replace(/,/g, "\\,");
+}
+
 function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitleSize: SubtitleSize = "m"): string {
   let filterChain = "[0:v]scale=1080:1920";
   
@@ -333,7 +338,9 @@ function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitl
   if (captionFile && fs.existsSync(captionFile)) {
     const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
     const escapedPath = path.resolve(captionFile).replace(/:/g, "\\:").replace(/'/g, "\\'");
-    filterChain += `,subtitles='${escapedPath}':force_style='FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=60'`;
+    const forceStyleRaw = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=60`;
+    const forceStyle = escapeCommasInFilterValue(forceStyleRaw);
+    filterChain += `,subtitles='${escapedPath}':force_style='${forceStyle}'`;
   }
   
   filterChain += "[v]";
