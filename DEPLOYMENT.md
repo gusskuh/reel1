@@ -52,6 +52,7 @@ Configure these in your hosting provider's dashboard:
 
 ## Notes
 
+- **Vercel + ffmpeg:** The repo sets `experimental.outputFileTracingIncludes` in `next.config.js` so `ffmpeg-static` / `ffprobe-static` binaries ship with `/api/generate`. If you still see `spawn ... ffmpeg ENOENT`, prefer **Render** for this workload—Vercel also caps **duration** and **memory** for long video jobs.
 - **`uploads/`** is created at runtime. On ephemeral disks, files are lost on restart; this is acceptable for the MVP.
 - **Rate limiting** is 3 generations per IP per hour (in-memory).
 - **Jobs** default to **in-memory** and are **lost on restart** (or invisible if you scale to multiple instances). Set **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`** so job state is stored in Redis (free tier on Upstash is enough).

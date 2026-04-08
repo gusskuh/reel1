@@ -6,6 +6,8 @@ import GeneratingStatus from "./components/GeneratingStatus";
 const POLL_INTERVAL_MS = 5000;
 /** Retries when host returns 502/empty body (OOM/restart on small instances). */
 const MAX_JOB_POLL_TRANSIENT_FAILURES = 18;
+/** Stop polling if job never reaches completed/failed (stuck pipeline, OOM, hung ffmpeg). */
+const MAX_JOB_POLL_WALL_MS = 25 * 60 * 1000;
 
 /** Avoids "Unexpected end of JSON input" when the proxy returns 502 with an empty body. */
 async function readJsonBody<T>(r: Response): Promise<T | null> {
@@ -189,8 +191,16 @@ export default function Home() {
       setJobId(id);
       setStatus("processing");
 
+      const pollStartedAt = Date.now();
       let transientFailures = 0;
       const poll = async () => {
+        if (Date.now() - pollStartedAt > MAX_JOB_POLL_WALL_MS) {
+          setError(
+            "Generation is taking too long (the server may have run out of memory or the job stalled). Check Render logs, try a larger instance, then generate again."
+          );
+          setLoading(false);
+          return;
+        }
         try {
           const r = await fetch(`/api/jobs/${id}`);
           const text = await r.text();

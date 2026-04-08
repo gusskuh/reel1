@@ -88,11 +88,13 @@ export async function createDynamicVideo(options: {
       ffmpeg(scene.clipPath)
         .videoCodec("libx264")
         .outputOptions([
+          "-threads",
+          "2",
           "-an",
           "-pix_fmt yuv420p",
           "-r 30", // Force 30fps - normalizes variable framerate sources
           "-vsync cfr",
-          "-preset fast",
+          "-preset ultrafast",
           "-crf 23",
           "-g 15", // Keyframe every 0.5s
           "-vf", trimFilter,
@@ -114,32 +116,28 @@ export async function createDynamicVideo(options: {
     });
   }
 
-  console.log("🎞️  Concatenating with concat filter (smooth, no freezing - ~2-4 min)...");
+  console.log("🎞️  Concatenating scenes (concat demuxer — low memory vs. filter concat)...");
   const combinedPath = "combined_scenes.mp4";
+  const concatListPath = "concat_list.txt";
+  const listBody = trimmedScenes
+    .map((p) => {
+      const abs = path.resolve(p).replace(/'/g, "'\\''");
+      return `file '${abs}'`;
+    })
+    .join("\n");
+  fs.writeFileSync(concatListPath, listBody);
 
-  // 2️⃣ Concat filter - decodes each clip, joins raw frames, re-encodes. Guarantees smooth playback.
-  // Uses ultrafast preset to minimize wait time.
+  // 2️⃣ Concat demuxer + stream copy: one decode pipeline, no parallel decodes (filter concat
+  //    holds N decoders and spikes RAM — common OOM on 512MB hosts). Falls back to re-encode
+  //    if copy fails (e.g. minor stream mismatch).
   await new Promise<void>((resolve, reject) => {
-    const cmd = ffmpeg();
-    trimmedScenes.forEach(p => cmd.input(p));
-    const inputLabels = trimmedScenes.map((_, i) => `[${i}:v]`).join("");
-    const concatFilter = `${inputLabels}concat=n=${trimmedScenes.length}:v=1:a=0[outv]`;
-
-    cmd
-      .complexFilter(concatFilter)
-      .outputOptions([
-        "-map [outv]",
-        "-c:v libx264",
-        "-an",
-        "-pix_fmt yuv420p",
-        "-preset ultrafast", // Fastest encode - ~2-4 min for 45s video
-        "-crf 26",
-        "-g 15",
-        "-movflags +faststart",
-      ])
+    ffmpeg()
+      .input(concatListPath)
+      .inputOptions(["-f", "concat", "-safe", "0"])
+      .outputOptions(["-c", "copy", "-movflags", "+faststart"])
       .save(combinedPath)
       .on("end", () => {
-        console.log("✅ Scenes combined (smooth playback).");
+        console.log("✅ Scenes combined (stream copy).");
         if (!fs.existsSync(combinedPath) || fs.statSync(combinedPath).size === 0) {
           reject(new Error("Combined video file is invalid or empty"));
           return;
@@ -147,8 +145,40 @@ export async function createDynamicVideo(options: {
         resolve();
       })
       .on("error", (err) => {
-        console.error("❌ Error concatenating scenes:", err);
-        reject(err);
+        console.warn("⚠️  Concat copy failed, re-encoding sequentially:", err?.message ?? err);
+        ffmpeg()
+          .input(concatListPath)
+          .inputOptions(["-f", "concat", "-safe", "0"])
+          .outputOptions([
+            "-threads",
+            "2",
+            "-c:v",
+            "libx264",
+            "-an",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "26",
+            "-g",
+            "15",
+            "-movflags",
+            "+faststart",
+          ])
+          .save(combinedPath)
+          .on("end", () => {
+            console.log("✅ Scenes combined (re-encode).");
+            if (!fs.existsSync(combinedPath) || fs.statSync(combinedPath).size === 0) {
+              reject(new Error("Combined video file is invalid or empty"));
+              return;
+            }
+            resolve();
+          })
+          .on("error", (err2) => {
+            console.error("❌ Error concatenating scenes:", err2);
+            reject(err2);
+          });
       });
   });
 
@@ -255,6 +285,7 @@ export async function createDynamicVideo(options: {
         trimmedScenes.forEach(f => {
           if (fs.existsSync(f)) fs.unlinkSync(f);
         });
+        if (fs.existsSync(concatListPath)) fs.unlinkSync(concatListPath);
         if (fs.existsSync(combinedPath)) fs.unlinkSync(combinedPath);
         // Clean up ticker text file if it exists
         const tickerTextFile = path.resolve("ticker_text.txt");
