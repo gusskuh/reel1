@@ -16,6 +16,7 @@ import { generateSpeech } from "../scripts/generateSpeech";
 import { generateSceneVideos } from "../scripts/fetchSceneVideos";
 import { generateCaptions } from "../scripts/generateCaptions";
 import { createDynamicVideo } from "../scripts/createDynamicVideo";
+import { capAudioDurationInPlace } from "./capAudioDuration";
 
 export interface RunReelPipelineOptions {
   workDir?: string;
@@ -49,6 +50,7 @@ export async function runReelPipeline(options?: RunReelPipelineOptions | string)
     );
 
     const voicePath = await generateSpeech(script, "voice.mp3", voice);
+    await capAudioDurationInPlace(voicePath);
 
     const defaultKeyword =
       niche === "inspirational"

@@ -1,10 +1,19 @@
 import fs from "fs";
 import path from "path";
+import { MAX_REEL_DURATION_SEC } from "../lib/reelLimits";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import { path as ffprobePath } from "ffprobe-static";
 ffmpeg.setFfmpegPath(ffmpegPath!);
 ffmpeg.setFfprobePath(ffprobePath);
+
+/** Trim + concat at 720p to stay under small container RAM (e.g. Render 512MB); final pass scales to 1080×1920. */
+const PIPELINE_W = 720;
+const PIPELINE_H = 1280;
+const OUTPUT_W = 1080;
+const OUTPUT_H = 1920;
+/** Single-threaded x264 lowers peak RAM on tight hosts. */
+const X264_THREADS = "1";
 
 interface SceneSegment {
   start: number; // start time in seconds
@@ -43,9 +52,10 @@ export async function createDynamicVideo(options: {
 
   if (!fs.existsSync(voicePath)) throw new Error(`Missing voice file: ${voicePath}`);
 
-  // Get audio duration to determine how many scenes we need
-  const audioDuration = await getAudioDuration(voicePath);
-  console.log(`🎵 Audio duration: ${audioDuration.toFixed(2)}s`);
+  // Get audio duration to determine how many scenes we need (capped for 30s max reels)
+  const rawDuration = await getAudioDuration(voicePath);
+  const audioDuration = Math.min(rawDuration, MAX_REEL_DURATION_SEC);
+  console.log(`🎵 Audio duration: ${audioDuration.toFixed(2)}s${rawDuration > MAX_REEL_DURATION_SEC ? ` (capped from ${rawDuration.toFixed(2)}s)` : ""}`);
 
   const sceneDuration = 5; // Each scene is 5 seconds
   const neededScenes = Math.ceil(audioDuration / sceneDuration);
@@ -58,6 +68,7 @@ export async function createDynamicVideo(options: {
   // Use only the scenes we need, or all available if less
   const scenesToUse = availableScenes.slice(0, neededScenes);
   console.log(`🎬 Using ${scenesToUse.length} scene(s) for ${audioDuration.toFixed(2)}s video`);
+  console.log(`📐 Pipeline ${PIPELINE_W}×${PIPELINE_H} → final ${OUTPUT_W}×${OUTPUT_H} (memory-friendly)`);
 
   // 1️⃣ Trim each scene - use trim filter to avoid VFR/timestamp issues in source clips
   const trimmedScenes: string[] = [];
@@ -83,13 +94,13 @@ export async function createDynamicVideo(options: {
     
     await new Promise<void>((resolve, reject) => {
       // Use trim filter for precise cutting - avoids VFR/timestamp issues in source clips
-      const scalePad = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
+      const scalePad = `scale=${PIPELINE_W}:${PIPELINE_H}:force_original_aspect_ratio=decrease,pad=${PIPELINE_W}:${PIPELINE_H}:(ow-iw)/2:(oh-ih)/2`;
       const trimFilter = `trim=duration=${duration.toFixed(3)},setpts=PTS-STARTPTS,${scalePad}`;
       ffmpeg(scene.clipPath)
         .videoCodec("libx264")
         .outputOptions([
           "-threads",
-          "2",
+          X264_THREADS,
           "-an",
           "-pix_fmt yuv420p",
           "-r 30", // Force 30fps - normalizes variable framerate sources
@@ -151,7 +162,7 @@ export async function createDynamicVideo(options: {
           .inputOptions(["-f", "concat", "-safe", "0"])
           .outputOptions([
             "-threads",
-            "2",
+            X264_THREADS,
             "-c:v",
             "libx264",
             "-an",
@@ -201,6 +212,8 @@ export async function createDynamicVideo(options: {
           .videoCodec("libx264")
           .audioCodec("aac")
           .outputOptions([
+            "-threads",
+            X264_THREADS,
             "-t", (audioDuration + 0.5).toFixed(3), // Add small buffer to ensure it's long enough
             "-pix_fmt yuv420p",
             "-preset fast",
@@ -228,6 +241,8 @@ export async function createDynamicVideo(options: {
           .videoCodec("libx264")
           .audioCodec("aac")
           .outputOptions([
+            "-threads",
+            X264_THREADS,
             "-t", audioDuration.toFixed(3), // Trim to exact audio duration
             "-pix_fmt yuv420p",
             "-preset fast",
@@ -267,6 +282,8 @@ export async function createDynamicVideo(options: {
       .videoCodec("libx264")
       .audioCodec("aac")
       .outputOptions([
+        "-threads",
+        X264_THREADS,
         "-pix_fmt yuv420p",
         "-preset fast",
         "-crf 23",
@@ -322,7 +339,7 @@ function escapeCommasInFilterValue(s: string): string {
 }
 
 function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitleSize: SubtitleSize = "m"): string {
-  let filterChain = "[0:v]scale=1080:1920";
+  let filterChain = `[0:v]scale=${OUTPUT_W}:${OUTPUT_H}`;
   
   // Add ticker badge at the top if provided
   // Use textfile approach to avoid escaping issues

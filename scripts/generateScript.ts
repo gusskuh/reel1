@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
+import { MAX_REEL_DURATION_SEC } from "../lib/reelLimits";
 dotenv.config();
 
 const client = new OpenAI({
@@ -16,6 +17,9 @@ export type ScriptNiche =
   | "tech"
   | "food"
   | "relationships";
+
+/** Appended to every niche prompt so TTS + video stay within the cap. */
+const LENGTH_RULE = `\n\nSpoken length: at most ${MAX_REEL_DURATION_SEC} seconds (~75 words). Do not exceed.`;
 
 export async function generateReelScript(
   input: { title: string; content: string },
@@ -134,7 +138,8 @@ ${input.content}
 
   const completion = await client.chat.completions.create({
     model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: prompt + LENGTH_RULE }],
+    max_tokens: 240,
   });
 
   const script = completion.choices[0]?.message?.content?.trim();
@@ -142,8 +147,5 @@ ${input.content}
     return "No script generated.";
   }
 
-  if (niche === "financial") {
-    return `${script}\n\nFor more information visit us at value z A i dot com`;
-  }
   return script;
 }

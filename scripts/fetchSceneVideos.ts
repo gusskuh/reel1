@@ -1,5 +1,6 @@
 import { OpenAI } from "openai";
 import { fetchBackgroundVideo } from "./fetchBackgroundVideo";
+import { MAX_REEL_SCENES } from "../lib/reelLimits";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -8,6 +9,7 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 export async function generateSceneVideos(script: string, defaultKeyword = "motivation") {
   const prompt = `
 Split this narration into short visual scenes (max 5 seconds each).
+Use at most ${MAX_REEL_SCENES} scenes total (~30 seconds of video).
 For each scene, return JSON with "text" (narration snippet) and "keywords" (visual topics for stock footage).
 Use Pexels-friendly keywords: nature, city, success, teamwork, sunrise, etc. for inspirational content; or stocks, finance, charts for financial.
 Narration:
@@ -31,8 +33,8 @@ Return JSON in format: {"scenes": [{"text": "...", "keywords": ["keyword1", "key
     throw new Error("Invalid JSON response from OpenAI");
   }
   
-  const scenes = parsed.scenes || [];
-  
+  const scenes = (parsed.scenes || []).slice(0, MAX_REEL_SCENES);
+
   if (scenes.length === 0) {
     throw new Error("No scenes generated from script");
   }
