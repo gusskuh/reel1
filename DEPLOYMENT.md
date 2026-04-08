@@ -15,6 +15,8 @@ Configure these in your hosting provider's dashboard:
 | `TIKTOK_CLIENT_SECRET`    | For TikTok posting | Same app as client key                               |
 | `TIKTOK_REDIRECT_URI`     | For TikTok posting | e.g. `https://YOUR_HOST/api/tiktok/callback` (portal must match) |
 | `TIKTOK_SESSION_SECRET`    | For TikTok posting | Random string 16+ chars; encrypts OAuth cookie        |
+| `UPSTASH_REDIS_REST_URL`   | Recommended on Render/Vercel | From [Upstash](https://upstash.com) — job status survives restarts & multi-instance |
+| `UPSTASH_REDIS_REST_TOKEN` | Recommended on Render/Vercel | Pair with URL above |
 
 ## Railway
 
@@ -52,7 +54,7 @@ Configure these in your hosting provider's dashboard:
 
 - **`uploads/`** is created at runtime. On ephemeral disks, files are lost on restart; this is acceptable for the MVP.
 - **Rate limiting** is 3 generations per IP per hour (in-memory).
-- **Jobs** are stored in memory and lost when the server restarts.
+- **Jobs** default to **in-memory** and are **lost on restart** (or invisible if you scale to multiple instances). Set **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`** so job state is stored in Redis (free tier on Upstash is enough).
 
 ## Local development
 

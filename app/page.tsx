@@ -196,19 +196,20 @@ export default function Home() {
           const text = await r.text();
 
           if (!r.ok) {
-            if (r.status === 404) {
-              setError(
-                "Job not found (server may have restarted). Try generating again."
-              );
-              setLoading(false);
-              return;
-            }
-            if (r.status >= 500) {
+            // 404 = job missing from store (restart, OOM, or another instance without Redis).
+            // 5xx = proxy / server error. Retry both—sometimes the next poll hits a healthy instance.
+            if (r.status === 404 || r.status >= 500) {
               transientFailures++;
               if (transientFailures >= MAX_JOB_POLL_TRANSIENT_FAILURES) {
-                setError(
-                  "Server stopped responding while checking status. Heavy video work often needs more RAM—try a larger Render instance, or refresh and try again."
-                );
+                if (r.status === 404) {
+                  setError(
+                    "Lost track of this job (server restarted or jobs only live in memory). Add Upstash Redis: set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Render, then redeploy—or generate a new reel."
+                  );
+                } else {
+                  setError(
+                    "Server stopped responding while checking status. Heavy video work often needs more RAM—try a larger Render instance, or refresh and try again."
+                  );
+                }
                 setLoading(false);
                 return;
               }
