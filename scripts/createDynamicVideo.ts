@@ -7,11 +7,21 @@ import { path as ffprobePath } from "ffprobe-static";
 ffmpeg.setFfmpegPath(ffmpegPath!);
 ffmpeg.setFfprobePath(ffprobePath);
 
-/** Trim + concat at 720p to stay under small container RAM (e.g. Render 512MB); final pass scales to 1080×1920. */
-const PIPELINE_W = 720;
-const PIPELINE_H = 1280;
-const OUTPUT_W = 1080;
-const OUTPUT_H = 1920;
+/**
+ * Pipeline: low-res trim/concat for 512MB-class hosts (Render free tier).
+ * Final: 720×1280 export — still sharp on phones, much less RAM than 1080×1920 burns.
+ */
+const PIPELINE_W = 480;
+const PIPELINE_H = 854;
+const OUTPUT_W = 720;
+const OUTPUT_H = 1280;
+
+/** Scale UI vs original 1080p recipe */
+const OUT_SCALE = OUTPUT_W / 1080;
+const TICKER_FONT_PX = Math.round(48 * OUT_SCALE);
+const TICKER_BOX_Y = Math.round(40 * OUT_SCALE);
+const SUBTITLE_MARGIN_V = Math.round(60 * OUT_SCALE);
+
 /** Single-threaded x264 lowers peak RAM on tight hosts. */
 const X264_THREADS = "1";
 
@@ -68,7 +78,9 @@ export async function createDynamicVideo(options: {
   // Use only the scenes we need, or all available if less
   const scenesToUse = availableScenes.slice(0, neededScenes);
   console.log(`🎬 Using ${scenesToUse.length} scene(s) for ${audioDuration.toFixed(2)}s video`);
-  console.log(`📐 Pipeline ${PIPELINE_W}×${PIPELINE_H} → final ${OUTPUT_W}×${OUTPUT_H} (memory-friendly)`);
+  console.log(
+    `📐 Pipeline ${PIPELINE_W}×${PIPELINE_H} → export ${OUTPUT_W}×${OUTPUT_H} (low-RAM path for small instances)`
+  );
 
   // 1️⃣ Trim each scene - use trim filter to avoid VFR/timestamp issues in source clips
   const trimmedScenes: string[] = [];
@@ -216,7 +228,7 @@ export async function createDynamicVideo(options: {
             X264_THREADS,
             "-t", (audioDuration + 0.5).toFixed(3), // Add small buffer to ensure it's long enough
             "-pix_fmt yuv420p",
-            "-preset fast",
+            "-preset ultrafast",
             "-g 30", // Keyframe interval
             "-movflags +faststart", // Enable fast start
           ])
@@ -245,7 +257,7 @@ export async function createDynamicVideo(options: {
             X264_THREADS,
             "-t", audioDuration.toFixed(3), // Trim to exact audio duration
             "-pix_fmt yuv420p",
-            "-preset fast",
+            "-preset ultrafast",
             "-g 30", // Keyframe interval
             "-movflags +faststart", // Enable fast start
           ])
@@ -285,8 +297,8 @@ export async function createDynamicVideo(options: {
         "-threads",
         X264_THREADS,
         "-pix_fmt yuv420p",
-        "-preset fast",
-        "-crf 23",
+        "-preset ultrafast",
+        "-crf 24",
         "-g 30", // Keyframe interval for better seeking
         "-movflags +faststart", // Enable fast start
         "-t", audioDuration.toFixed(3), // Force exact audio duration
@@ -331,7 +343,11 @@ function escapeDrawText(text: string): string {
     .replace(/%/g, "\\%");  // Escape percent signs
 }
 
-const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = { s: 14, m: 20, l: 28 };
+const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = {
+  s: Math.max(8, Math.round(14 * OUT_SCALE)),
+  m: Math.max(10, Math.round(20 * OUT_SCALE)),
+  l: Math.max(12, Math.round(28 * OUT_SCALE)),
+};
 
 /**
  * Escape characters that break -filter_complex parsing:
@@ -356,14 +372,14 @@ function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitl
     fs.writeFileSync(tickerTextFile, tickerText);
     const escapedTickerFile = tickerTextFile.replace(/:/g, "\\:").replace(/'/g, "\\'");
     // @ in boxcolor=black@0.8 must be \@ or ffmpeg treats @ as file-include and the graph breaks ("Filter not found").
-    filterChain += `,drawtext=textfile='${escapedTickerFile}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=40:box=1:boxcolor=black\@0.8:boxborderw=10`;
+    filterChain += `,drawtext=textfile='${escapedTickerFile}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=black\@0.8:boxborderw=10`;
   }
   
   // Add subtitles if available
   if (captionFile && fs.existsSync(captionFile)) {
     const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
     const escapedPath = path.resolve(captionFile).replace(/:/g, "\\:").replace(/'/g, "\\'");
-    const forceStyleRaw = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=60`;
+    const forceStyleRaw = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=${SUBTITLE_MARGIN_V}`;
     const forceStyle = escapeFilterGraphOptionValue(forceStyleRaw);
     filterChain += `,subtitles='${escapedPath}':force_style='${forceStyle}'`;
   }
