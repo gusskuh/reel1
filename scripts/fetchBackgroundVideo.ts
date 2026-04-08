@@ -1,7 +1,8 @@
 import axios from "axios";
-import fs from "fs";
+import fs, { createWriteStream } from "fs";
 import path from "path";
 import https from "https";
+import { pipeline } from "stream/promises";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -21,6 +22,14 @@ interface PexelsVideo {
   url: string;
   image: string;
   video_files: VideoFile[];
+}
+
+/** Prefer smallest portrait file so ffmpeg decodes less (RAM on 512MB hosts). */
+function pickSmallestPortraitFile(files: VideoFile[]): VideoFile | null {
+  if (!files.length) return null;
+  const portrait = files.filter((f) => f.width > 0 && f.height > 0 && f.width < f.height);
+  const pool = portrait.length ? portrait : files;
+  return [...pool].sort((a, b) => a.width * a.height - b.width * b.height)[0] ?? null;
 }
 
 /**
@@ -62,27 +71,43 @@ export async function fetchBackgroundVideo(
       return null;
     }
 
-    // Choose the first one that is vertical
-    const selected = videos.find((v) =>
-      v.video_files.some((f) => f.width < f.height)
-    ) || videos[0];
+    // Prefer a result that has at least one portrait file
+    const selected =
+      videos.find((v) => v.video_files.some((f) => f.width < f.height)) || videos[0];
 
-    // Choose a vertical or best-quality file
-    const file =
-      selected.video_files.find((f) => f.width < f.height) ||
-      selected.video_files.sort((a, b) => b.width - a.width)[0];
+    const file = pickSmallestPortraitFile(selected.video_files);
+    if (!file?.link) {
+      console.log("⚠️  No usable video file metadata.");
+      return null;
+    }
 
     const videoUrl = file.link;
 
-    console.log(`📦 Downloading video from: ${videoUrl}`);
+    console.log(`📦 Downloading (${file.width}×${file.height}) → stream to disk: ${videoUrl}`);
 
-    // Reuse the same httpsAgent for video download
-    const response = await axios.get(videoUrl, {
-      responseType: "arraybuffer",
-      httpsAgent,
-    });
     const outputPath = path.resolve(filename);
-    fs.writeFileSync(outputPath, Buffer.from(response.data));
+    const partPath = `${outputPath}.part`;
+
+    // Stream to disk — never load full MP4 into RAM (arraybuffer was spiking memory on HD clips).
+    const response = await axios.get(videoUrl, {
+      responseType: "stream",
+      httpsAgent,
+      timeout: 120_000,
+      maxContentLength: 45 * 1024 * 1024,
+      maxBodyLength: 45 * 1024 * 1024,
+    });
+
+    try {
+      await pipeline(response.data, createWriteStream(partPath));
+      fs.renameSync(partPath, outputPath);
+    } catch (e) {
+      try {
+        if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
+      } catch {
+        /* ignore */
+      }
+      throw e;
+    }
 
     console.log(`✅ Saved background video: ${outputPath}`);
     return outputPath;
