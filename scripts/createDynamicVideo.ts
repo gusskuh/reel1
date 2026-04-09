@@ -1,3 +1,4 @@
+import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { MAX_REEL_DURATION_SEC } from "../lib/reelLimits";
@@ -32,6 +33,22 @@ const CAPTIONS_ASS_FILE = "captions.ass";
 
 /** Single-threaded x264 lowers peak RAM on tight hosts. */
 const X264_THREADS = "1";
+
+/** Direct `spawn` argv — avoids fluent-ffmpeg `outputOptions` splitting / ordering bugs with long `-vf` chains. */
+function ffmpegSpawn(args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath!, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited with code ${code}: ${stderr.trim().slice(-4000)}`));
+    });
+  });
+}
 
 interface SceneSegment {
   start: number; // start time in seconds
@@ -311,53 +328,55 @@ export async function createDynamicVideo(options: {
     tickerSymbol,
   });
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg(combinedPath)
-        .videoCodec("libx264")
-        .outputOptions([
-          "-threads",
-          X264_THREADS,
-          "-vf",
-          vf,
-          "-an",
-          "-pix_fmt",
-          "yuv420p",
-          "-preset",
-          "ultrafast",
-          "-crf",
-          "24",
-          "-g",
-          "30",
-        ])
-        .save(videoBurned)
-        .on("end", () => resolve())
-        .on("error", reject);
-    });
+  const combinedAbs = path.resolve(combinedPath);
+  const voiceAbs = path.resolve(voicePath);
+  const outputAbs = path.resolve(output);
 
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg(videoBurned)
-        .addInput(voicePath)
-        .outputOptions([
-          "-map",
-          "0:v:0",
-          "-map",
-          "1:a:0",
-          "-c:v",
-          "copy",
-          "-c:a",
-          "aac",
-          "-t",
-          audioDuration.toFixed(3),
-          "-movflags",
-          "+faststart",
-          "-threads",
-          X264_THREADS,
-        ])
-        .save(output)
-        .on("end", () => resolve())
-        .on("error", reject);
-    });
+  try {
+    await ffmpegSpawn([
+      "-y",
+      "-i",
+      combinedAbs,
+      "-vf",
+      vf,
+      "-an",
+      "-c:v",
+      "libx264",
+      "-pix_fmt",
+      "yuv420p",
+      "-preset",
+      "ultrafast",
+      "-crf",
+      "24",
+      "-g",
+      "30",
+      "-threads",
+      X264_THREADS,
+      videoBurned,
+    ]);
+
+    await ffmpegSpawn([
+      "-y",
+      "-i",
+      videoBurned,
+      "-i",
+      voiceAbs,
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      "-t",
+      audioDuration.toFixed(3),
+      "-movflags",
+      "+faststart",
+      "-threads",
+      X264_THREADS,
+      outputAbs,
+    ]);
   } catch (err) {
     unlinkIfExists(videoBurned);
     throw err;
