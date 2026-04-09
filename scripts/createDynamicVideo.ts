@@ -371,8 +371,8 @@ function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitl
     const tickerText = `Ticker: ${tickerSymbol}`;
     fs.writeFileSync(tickerTextFile, tickerText);
     const escapedTickerFile = tickerTextFile.replace(/:/g, "\\:").replace(/'/g, "\\'");
-    // @ in boxcolor=black@0.8 must be \@ or ffmpeg treats @ as file-include and the graph breaks ("Filter not found").
-    filterChain += `,drawtext=textfile='${escapedTickerFile}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=black\@0.8:boxborderw=10`;
+    // In JS strings `\@` becomes `@`; use `\\@` so ffmpeg sees `\@` (otherwise @ triggers file-include → "Filter not found").
+    filterChain += `,drawtext=textfile='${escapedTickerFile}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=black\\@0.8:boxborderw=10`;
   }
   
   // Add subtitles if available
