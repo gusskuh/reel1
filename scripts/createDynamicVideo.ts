@@ -22,6 +22,9 @@ const TICKER_FONT_PX = Math.round(48 * OUT_SCALE);
 const TICKER_BOX_Y = Math.round(40 * OUT_SCALE);
 const SUBTITLE_MARGIN_V = Math.round(60 * OUT_SCALE);
 
+/** ARGB hex for drawtext box (avoids `@` in filter_graph — avoids parser differences vs black@0.8). ~80% alpha black */
+const TICKER_BOX_COLOR = "0xCC000000";
+
 /** Single-threaded x264 lowers peak RAM on tight hosts. */
 const X264_THREADS = "1";
 
@@ -349,18 +352,6 @@ const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = {
   l: Math.max(12, Math.round(28 * OUT_SCALE)),
 };
 
-/**
- * Escape characters that break -filter_complex parsing:
- * - `,` splits filters; `\@` is file-include in some contexts; `&` can confuse option parsing in ASS styles.
- */
-function escapeFilterGraphOptionValue(s: string): string {
-  return s
-    .replace(/\\/g, "\\\\")
-    .replace(/@/g, "\\@")
-    .replace(/&/g, "\\&")
-    .replace(/,/g, "\\,");
-}
-
 function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitleSize: SubtitleSize = "m"): string {
   let filterChain = `[0:v]scale=${OUTPUT_W}:${OUTPUT_H}`;
   
@@ -371,16 +362,15 @@ function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitl
     const tickerText = `Ticker: ${tickerSymbol}`;
     fs.writeFileSync(tickerTextFile, tickerText);
     const escapedTickerFile = tickerTextFile.replace(/:/g, "\\:").replace(/'/g, "\\'");
-    // In JS strings `\@` becomes `@`; use `\\@` so ffmpeg sees `\@` (otherwise @ triggers file-include → "Filter not found").
-    filterChain += `,drawtext=textfile='${escapedTickerFile}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=black\\@0.8:boxborderw=10`;
+    filterChain += `,drawtext=textfile='${escapedTickerFile}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=${TICKER_BOX_COLOR}:boxborderw=10`;
   }
   
   // Add subtitles if available
   if (captionFile && fs.existsSync(captionFile)) {
     const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
     const escapedPath = path.resolve(captionFile).replace(/:/g, "\\:").replace(/'/g, "\\'");
-    const forceStyleRaw = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=${SUBTITLE_MARGIN_V}`;
-    const forceStyle = escapeFilterGraphOptionValue(forceStyleRaw);
+    const forceStyle = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=${SUBTITLE_MARGIN_V}`;
+    // Commas/`&` are fine inside single-quoted force_style; extra `\,` / `\&` breaks some ffmpeg builds ("Filter not found").
     filterChain += `,subtitles='${escapedPath}':force_style='${forceStyle}'`;
   }
   

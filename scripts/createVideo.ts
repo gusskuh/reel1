@@ -48,7 +48,7 @@ export async function createReelVideo(options: {
     videoFilter += `,subtitles='${escapedSRTPath}':force_style='FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=2,Alignment=2,MarginV=50'`;
   } else if (captions) {
     // Use drawtext for static text caption
-    videoFilter += `,drawtext=text='${escapeText(captions)}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-200:box=1:boxcolor=black\\@0.5`;
+    videoFilter += `,drawtext=text='${escapeText(captions)}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-200:box=1:boxcolor=0x80000000`;
   }
 
   return new Promise<string>((resolve, reject) => {
