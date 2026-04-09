@@ -303,9 +303,18 @@ export async function createDynamicVideo(options: {
 
   return new Promise<string>((resolve, reject) => {
     const cmd = ffmpeg();
-    cmd.input(combinedPath)
-      .addInput(voicePath)
-      .videoCodec("libx264")
+    cmd.input(combinedPath).addInput(voicePath);
+
+    const cmdInternal = cmd as unknown as {
+      _complexFilters: (...args: string[]) => void;
+    };
+    // Must use _complexFilters slot: outputOptions are emitted after -c:v/-c:a; the graph must sit
+    // after -i and before codecs or ffmpeg rejects -filter_complex_script ("Filter not found").
+    cmdInternal._complexFilters("-filter_complex_script", filterScriptPath);
+    cmdInternal._complexFilters("-map", "[v]");
+    cmdInternal._complexFilters("-map", "1:a");
+
+    cmd.videoCodec("libx264")
       .audioCodec("aac")
       .outputOptions([
         "-threads",
@@ -316,12 +325,6 @@ export async function createDynamicVideo(options: {
         "-g 30", // Keyframe interval for better seeking
         "-movflags +faststart", // Enable fast start
         "-t", audioDuration.toFixed(3), // Force exact audio duration
-        "-filter_complex_script",
-        filterScriptPath,
-        "-map",
-        "[v]",
-        "-map",
-        "1:a",
       ])
       .save(output)
       .on("end", () => {
