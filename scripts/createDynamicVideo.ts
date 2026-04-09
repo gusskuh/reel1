@@ -25,6 +25,9 @@ const SUBTITLE_MARGIN_V = Math.round(60 * OUT_SCALE);
 /** ARGB hex for drawtext box (avoids `@` in filter_graph — avoids parser differences vs black@0.8). ~80% alpha black */
 const TICKER_BOX_COLOR = "0xCC000000";
 
+/** Written next to other temp files; graph loaded via `-filter_complex_script` so commas in `force_style` are not misparsed on Linux CLI. */
+const FILTER_COMPLEX_SCRIPT = "filter_complex.graph";
+
 /** Single-threaded x264 lowers peak RAM on tight hosts. */
 const X264_THREADS = "1";
 
@@ -290,6 +293,14 @@ export async function createDynamicVideo(options: {
     console.log("🗑️  Removed old output file");
   }
 
+  const filterScriptPath = path.resolve(FILTER_COMPLEX_SCRIPT);
+  const filterGraph = buildFilterComplex(captionFile, tickerSymbol, subtitleSize);
+  fs.writeFileSync(filterScriptPath, filterGraph, "utf8");
+
+  const unlinkIfExists = (p: string) => {
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  };
+
   return new Promise<string>((resolve, reject) => {
     const cmd = ffmpeg();
     cmd.input(combinedPath)
@@ -305,10 +316,12 @@ export async function createDynamicVideo(options: {
         "-g 30", // Keyframe interval for better seeking
         "-movflags +faststart", // Enable fast start
         "-t", audioDuration.toFixed(3), // Force exact audio duration
-        "-filter_complex",
-        buildFilterComplex(captionFile, tickerSymbol, subtitleSize),
-        "-map [v]", // Map the filtered video
-        "-map 1:a", // Map audio from second input (voice)
+        "-filter_complex_script",
+        filterScriptPath,
+        "-map",
+        "[v]",
+        "-map",
+        "1:a",
       ])
       .save(output)
       .on("end", () => {
@@ -319,13 +332,13 @@ export async function createDynamicVideo(options: {
         });
         if (fs.existsSync(concatListPath)) fs.unlinkSync(concatListPath);
         if (fs.existsSync(combinedPath)) fs.unlinkSync(combinedPath);
-        // Clean up ticker text file if it exists
-        const tickerTextFile = path.resolve("ticker_text.txt");
-        if (fs.existsSync(tickerTextFile)) fs.unlinkSync(tickerTextFile);
+        unlinkIfExists(filterScriptPath);
+        unlinkIfExists(path.resolve("ticker_text.txt"));
         resolve(output);
       })
       .on("error", (err) => {
         console.error("❌ Video generation failed:", err);
+        unlinkIfExists(filterScriptPath);
         reject(err);
       });
   });
@@ -370,7 +383,7 @@ function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitl
     const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
     const escapedPath = path.resolve(captionFile).replace(/:/g, "\\:").replace(/'/g, "\\'");
     const forceStyle = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=${SUBTITLE_MARGIN_V}`;
-    // Commas/`&` are fine inside single-quoted force_style; extra `\,` / `\&` breaks some ffmpeg builds ("Filter not found").
+    // Graph is read from file (`-filter_complex_script`); commas in force_style stay inside quoted value.
     filterChain += `,subtitles='${escapedPath}':force_style='${forceStyle}'`;
   }
   
