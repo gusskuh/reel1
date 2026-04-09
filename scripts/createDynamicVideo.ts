@@ -25,9 +25,6 @@ const SUBTITLE_MARGIN_V = Math.round(60 * OUT_SCALE);
 /** ARGB hex for drawtext box (avoids `@` in filter_graph — avoids parser differences vs black@0.8). ~80% alpha black */
 const TICKER_BOX_COLOR = "0xCC000000";
 
-/** Written next to other temp files; graph loaded via `-filter_complex_script` so commas in `force_style` are not misparsed on Linux CLI. */
-const FILTER_COMPLEX_SCRIPT = "filter_complex.graph";
-
 /** Single-threaded x264 lowers peak RAM on tight hosts. */
 const X264_THREADS = "1";
 
@@ -293,9 +290,7 @@ export async function createDynamicVideo(options: {
     console.log("🗑️  Removed old output file");
   }
 
-  const filterScriptPath = path.resolve(FILTER_COMPLEX_SCRIPT);
   const filterGraph = buildFilterComplex(captionFile, tickerSymbol, subtitleSize);
-  fs.writeFileSync(filterScriptPath, filterGraph, "utf8");
 
   const unlinkIfExists = (p: string) => {
     if (fs.existsSync(p)) fs.unlinkSync(p);
@@ -308,9 +303,9 @@ export async function createDynamicVideo(options: {
     const cmdInternal = cmd as unknown as {
       _complexFilters: (...args: string[]) => void;
     };
-    // Must use _complexFilters slot: outputOptions are emitted after -c:v/-c:a; the graph must sit
-    // after -i and before codecs or ffmpeg rejects -filter_complex_script ("Filter not found").
-    cmdInternal._complexFilters("-filter_complex_script", filterScriptPath);
+    // _complexFilters runs after -i and before -c:v/-c:a. Use inline `-filter_complex` (not
+    // `-filter_complex_script`): some static linux builds reject the script option with "Filter not found".
+    cmdInternal._complexFilters("-filter_complex", filterGraph);
     cmdInternal._complexFilters("-map", "[v]");
     cmdInternal._complexFilters("-map", "1:a");
 
@@ -335,13 +330,11 @@ export async function createDynamicVideo(options: {
         });
         if (fs.existsSync(concatListPath)) fs.unlinkSync(concatListPath);
         if (fs.existsSync(combinedPath)) fs.unlinkSync(combinedPath);
-        unlinkIfExists(filterScriptPath);
         unlinkIfExists(path.resolve("ticker_text.txt"));
         resolve(output);
       })
       .on("error", (err) => {
         console.error("❌ Video generation failed:", err);
-        unlinkIfExists(filterScriptPath);
         reject(err);
       });
   });
@@ -368,6 +361,11 @@ const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = {
   l: Math.max(12, Math.round(28 * OUT_SCALE)),
 };
 
+/** ASS `force_style` value: commas/`&` must be escaped for `-filter_complex` graph parsing (Linux builds). */
+function escapeSubtitlesForceStyle(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/&/g, "\\&");
+}
+
 function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitleSize: SubtitleSize = "m"): string {
   let filterChain = `[0:v]scale=${OUTPUT_W}:${OUTPUT_H}`;
   
@@ -385,8 +383,8 @@ function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitl
   if (captionFile && fs.existsSync(captionFile)) {
     const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
     const escapedPath = path.resolve(captionFile).replace(/:/g, "\\:").replace(/'/g, "\\'");
-    const forceStyle = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=${SUBTITLE_MARGIN_V}`;
-    // Graph is read from file (`-filter_complex_script`); commas in force_style stay inside quoted value.
+    const forceStyleRaw = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=${SUBTITLE_MARGIN_V}`;
+    const forceStyle = escapeSubtitlesForceStyle(forceStyleRaw);
     filterChain += `,subtitles='${escapedPath}':force_style='${forceStyle}'`;
   }
   
