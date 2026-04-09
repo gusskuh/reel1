@@ -25,6 +25,11 @@ const SUBTITLE_MARGIN_V = Math.round(60 * OUT_SCALE);
 /** ARGB hex for drawtext box (avoids `@` in filter_graph — avoids parser differences vs black@0.8). ~80% alpha black */
 const TICKER_BOX_COLOR = "0xCC000000";
 
+/** Pass-1 output (video only, captions + ticker burned). Pass-2 muxes voice with `-c:v copy` — no `-filter_complex`. */
+const VIDEO_BURNED_FILE = "video_burned.mp4";
+/** Styled captions for `subtitles=` filter (styles live in ASS — no `force_style` / commas in argv). */
+const CAPTIONS_ASS_FILE = "captions.ass";
+
 /** Single-threaded x264 lowers peak RAM on tight hosts. */
 const X264_THREADS = "1";
 
@@ -283,61 +288,92 @@ export async function createDynamicVideo(options: {
     console.log(`📹 Adjusted video duration: ${adjustedDuration.toFixed(2)}s`);
   }
 
-  // 4️⃣ Add the audio + captions, ensuring exact duration match
-  // Remove old output file if it exists
+  // 4️⃣ Burn video (single-input `-vf` only) then mux voice (`-c:v copy`) — avoids fragile
+  //    `-filter_complex` on Linux static ffmpeg (drawtext + subtitles + force_style breaks parsing).
   if (fs.existsSync(output)) {
     fs.unlinkSync(output);
     console.log("🗑️  Removed old output file");
   }
 
-  const filterGraph = buildFilterComplex(captionFile, tickerSymbol, subtitleSize);
-
+  const videoBurned = path.resolve(VIDEO_BURNED_FILE);
+  const captionsAss = path.resolve(CAPTIONS_ASS_FILE);
   const unlinkIfExists = (p: string) => {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   };
 
-  return new Promise<string>((resolve, reject) => {
-    const cmd = ffmpeg();
-    cmd.input(combinedPath).addInput(voicePath);
+  if (captionFile && fs.existsSync(captionFile)) {
+    srtToAss(path.resolve(captionFile), captionsAss, subtitleSize);
+  }
 
-    const cmdInternal = cmd as unknown as {
-      _complexFilters: (...args: string[]) => void;
-    };
-    // _complexFilters runs after -i and before -c:v/-c:a. Use inline `-filter_complex` (not
-    // `-filter_complex_script`): some static linux builds reject the script option with "Filter not found".
-    cmdInternal._complexFilters("-filter_complex", filterGraph);
-    cmdInternal._complexFilters("-map", "[v]");
-    cmdInternal._complexFilters("-map", "1:a");
-
-    cmd.videoCodec("libx264")
-      .audioCodec("aac")
-      .outputOptions([
-        "-threads",
-        X264_THREADS,
-        "-pix_fmt yuv420p",
-        "-preset ultrafast",
-        "-crf 24",
-        "-g 30", // Keyframe interval for better seeking
-        "-movflags +faststart", // Enable fast start
-        "-t", audioDuration.toFixed(3), // Force exact audio duration
-      ])
-      .save(output)
-      .on("end", () => {
-        console.log(`🎉 Final reel ready: ${output} (${audioDuration.toFixed(2)}s)`);
-        // Clean up temporary files
-        trimmedScenes.forEach(f => {
-          if (fs.existsSync(f)) fs.unlinkSync(f);
-        });
-        if (fs.existsSync(concatListPath)) fs.unlinkSync(concatListPath);
-        if (fs.existsSync(combinedPath)) fs.unlinkSync(combinedPath);
-        unlinkIfExists(path.resolve("ticker_text.txt"));
-        resolve(output);
-      })
-      .on("error", (err) => {
-        console.error("❌ Video generation failed:", err);
-        reject(err);
-      });
+  const vf = buildVfBurnChain({
+    captionFile,
+    captionsAssPath: captionsAss,
+    tickerSymbol,
   });
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(combinedPath)
+        .videoCodec("libx264")
+        .outputOptions([
+          "-threads",
+          X264_THREADS,
+          "-vf",
+          vf,
+          "-an",
+          "-pix_fmt",
+          "yuv420p",
+          "-preset",
+          "ultrafast",
+          "-crf",
+          "24",
+          "-g",
+          "30",
+        ])
+        .save(videoBurned)
+        .on("end", () => resolve())
+        .on("error", reject);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(videoBurned)
+        .addInput(voicePath)
+        .outputOptions([
+          "-map",
+          "0:v:0",
+          "-map",
+          "1:a:0",
+          "-c:v",
+          "copy",
+          "-c:a",
+          "aac",
+          "-t",
+          audioDuration.toFixed(3),
+          "-movflags",
+          "+faststart",
+          "-threads",
+          X264_THREADS,
+        ])
+        .save(output)
+        .on("end", () => resolve())
+        .on("error", reject);
+    });
+  } catch (err) {
+    unlinkIfExists(videoBurned);
+    throw err;
+  }
+
+  console.log(`🎉 Final reel ready: ${output} (${audioDuration.toFixed(2)}s)`);
+  trimmedScenes.forEach((f) => {
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+  });
+  if (fs.existsSync(concatListPath)) fs.unlinkSync(concatListPath);
+  if (fs.existsSync(combinedPath)) fs.unlinkSync(combinedPath);
+  unlinkIfExists(videoBurned);
+  unlinkIfExists(captionsAss);
+  unlinkIfExists(path.resolve("ticker_text.txt"));
+
+  return output;
 }
 
 /**
@@ -361,33 +397,90 @@ const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = {
   l: Math.max(12, Math.round(28 * OUT_SCALE)),
 };
 
-/** ASS `force_style` value: commas/`&` must be escaped for `-filter_complex` graph parsing (Linux builds). */
-function escapeSubtitlesForceStyle(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/&/g, "\\&");
+function escapePathForVideoFilter(absPath: string): string {
+  return absPath.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
 
-function buildFilterComplex(captionFile?: string, tickerSymbol?: string, subtitleSize: SubtitleSize = "m"): string {
-  let filterChain = `[0:v]scale=${OUTPUT_W}:${OUTPUT_H}`;
-  
-  // Add ticker badge at the top if provided
-  // Use textfile approach to avoid escaping issues
-  if (tickerSymbol) {
+function buildVfBurnChain(opts: {
+  captionFile?: string;
+  captionsAssPath: string;
+  tickerSymbol?: string;
+}): string {
+  const filters: string[] = [`scale=${OUTPUT_W}:${OUTPUT_H}`];
+  if (opts.tickerSymbol) {
     const tickerTextFile = path.resolve("ticker_text.txt");
-    const tickerText = `Ticker: ${tickerSymbol}`;
-    fs.writeFileSync(tickerTextFile, tickerText);
-    const escapedTickerFile = tickerTextFile.replace(/:/g, "\\:").replace(/'/g, "\\'");
-    filterChain += `,drawtext=textfile='${escapedTickerFile}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=${TICKER_BOX_COLOR}:boxborderw=10`;
+    fs.writeFileSync(tickerTextFile, `Ticker: ${opts.tickerSymbol}`, "utf8");
+    const ep = escapePathForVideoFilter(tickerTextFile);
+    filters.push(
+      `drawtext=textfile='${ep}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=${TICKER_BOX_COLOR}:boxborderw=10`
+    );
   }
-  
-  // Add subtitles if available
-  if (captionFile && fs.existsSync(captionFile)) {
-    const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
-    const escapedPath = path.resolve(captionFile).replace(/:/g, "\\:").replace(/'/g, "\\'");
-    const forceStyleRaw = `FontSize=${fontSize},PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BorderStyle=3,Outline=1,Alignment=2,MarginV=${SUBTITLE_MARGIN_V}`;
-    const forceStyle = escapeSubtitlesForceStyle(forceStyleRaw);
-    filterChain += `,subtitles='${escapedPath}':force_style='${forceStyle}'`;
+  if (opts.captionFile && fs.existsSync(opts.captionFile) && fs.existsSync(opts.captionsAssPath)) {
+    filters.push(`subtitles='${escapePathForVideoFilter(opts.captionsAssPath)}'`);
   }
-  
-  filterChain += "[v]";
-  return filterChain;
+  return filters.join(",");
+}
+
+function parseSrtTimestamp(ts: string): number {
+  const m = ts.trim().match(/^(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})$/);
+  if (!m) return 0;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const sec = parseInt(m[3], 10);
+  const ms = parseInt(m[4].padEnd(3, "0").slice(0, 3), 10);
+  return h * 3600 + min * 60 + sec + ms / 1000;
+}
+
+function secondsToAssTime(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  const cs = Math.min(99, Math.floor((sec % 1) * 100 + 1e-6));
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+}
+
+/** SRT → ASS so libass reads font size / margins from the file (no `force_style` in ffmpeg args). */
+function srtToAss(srtPath: string, assPath: string, subtitleSize: SubtitleSize): void {
+  const raw = fs.readFileSync(srtPath, "utf8");
+  const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
+  const marginV = SUBTITLE_MARGIN_V;
+  const header = `[Script Info]
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+PlayResX: ${OUTPUT_W}
+PlayResY: ${OUTPUT_H}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,0,2,10,10,${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+  const blocks = raw.replace(/\r\n/g, "\n").trim().split(/\n\n+/);
+  const dialogues: string[] = [];
+  for (const block of blocks) {
+    const parts = block.trim().split("\n");
+    if (parts.length < 2) continue;
+    let ti = 0;
+    if (/^\d+$/.test(parts[0].trim())) ti = 1;
+    if (ti >= parts.length) continue;
+    const timeLine = parts[ti];
+    const timeMatch = timeLine.match(
+      /(\d{2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{1,3})/
+    );
+    if (!timeMatch) continue;
+    const start = secondsToAssTime(parseSrtTimestamp(timeMatch[1]));
+    const end = secondsToAssTime(parseSrtTimestamp(timeMatch[2]));
+    const text = parts
+      .slice(ti + 1)
+      .join("\\N")
+      .replace(/\\/g, "\\\\")
+      .replace(/{/g, "\\{")
+      .replace(/}/g, "\\}");
+    dialogues.push(`Dialogue: 0,${start},${end},Default,,,0,0,0,,${text}`);
+  }
+  fs.writeFileSync(assPath, header + dialogues.join("\n") + "\n", "utf8");
 }
