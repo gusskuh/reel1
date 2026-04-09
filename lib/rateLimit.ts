@@ -8,7 +8,7 @@ const globalForRate = globalThis as unknown as { rateLimitStore: Map<string, Rat
 const store = globalForRate.rateLimitStore ?? new Map<string, RateEntry>();
 if (process.env.NODE_ENV !== "production") globalForRate.rateLimitStore = store;
 
-export const RATE_LIMIT_MAX = 3;
+export const RATE_LIMIT_MAX = 99;
 const MAX_REQUESTS = RATE_LIMIT_MAX;
 const WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
