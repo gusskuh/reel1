@@ -1,10 +1,14 @@
 import { spawn } from "child_process";
+import { createRequire } from "node:module";
 import fs from "fs";
 import path from "path";
 import { MAX_REEL_DURATION_SEC } from "../lib/reelLimits";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegPath from "ffmpeg-static";
 import { path as ffprobePath } from "ffprobe-static";
+
+const nodeRequire = createRequire(import.meta.url);
+
 ffmpeg.setFfmpegPath(ffmpegPath!);
 ffmpeg.setFfprobePath(ffprobePath);
 
@@ -23,21 +27,33 @@ const TICKER_FONT_PX = Math.round(48 * OUT_SCALE);
 const TICKER_BOX_Y = Math.round(40 * OUT_SCALE);
 const SUBTITLE_MARGIN_V = Math.round(60 * OUT_SCALE);
 
-/** ARGB hex for drawtext box (avoids `@` in filter_graph — avoids parser differences vs black@0.8). ~80% alpha black */
-const TICKER_BOX_COLOR = "0xCC000000";
-
 /** Pass-1 output (video only, captions + ticker burned). Pass-2 muxes voice with `-c:v copy` — no `-filter_complex`. */
 const VIDEO_BURNED_FILE = "video_burned.mp4";
 /** Styled captions for `subtitles=` filter (styles live in ASS — no `force_style` / commas in argv). */
 const CAPTIONS_ASS_FILE = "captions.ass";
+/** Ticker as ASS — many static Linux builds (e.g. johnvansickle) have libass but no `drawtext` (no libfreetype). */
+const TICKER_ASS_FILE = "ticker.ass";
 
 /** Single-threaded x264 lowers peak RAM on tight hosts. */
 const X264_THREADS = "1";
 
+/** Prefer the npm `ffmpeg-static` binary on disk — ignores `FFMPEG_BIN` (Render often points at a slim build without drawtext; we use ASS + libass instead). */
+function getFfmpegSpawnExecutable(): string {
+  const exeName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  try {
+    const pkgJson = nodeRequire.resolve("ffmpeg-static/package.json");
+    const candidate = path.join(path.dirname(pkgJson), exeName);
+    if (fs.existsSync(candidate)) return candidate;
+  } catch {
+    /* bundled graph */
+  }
+  return ffmpegPath!;
+}
+
 /** Direct `spawn` argv — avoids fluent-ffmpeg `outputOptions` splitting / ordering bugs with long `-vf` chains. */
 function ffmpegSpawn(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(ffmpegPath!, args, { stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(getFfmpegSpawnExecutable(), args, { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -314,6 +330,7 @@ export async function createDynamicVideo(options: {
 
   const videoBurned = path.resolve(VIDEO_BURNED_FILE);
   const captionsAss = path.resolve(CAPTIONS_ASS_FILE);
+  const tickerAss = path.resolve(TICKER_ASS_FILE);
   const unlinkIfExists = (p: string) => {
     if (fs.existsSync(p)) fs.unlinkSync(p);
   };
@@ -321,11 +338,14 @@ export async function createDynamicVideo(options: {
   if (captionFile && fs.existsSync(captionFile)) {
     srtToAss(path.resolve(captionFile), captionsAss, subtitleSize);
   }
+  if (tickerSymbol) {
+    writeTickerAss(tickerAss, tickerSymbol, audioDuration + 5);
+  }
 
   const vf = buildVfBurnChain({
     captionFile,
     captionsAssPath: captionsAss,
-    tickerSymbol,
+    tickerAssPath: tickerSymbol ? tickerAss : undefined,
   });
 
   const combinedAbs = path.resolve(combinedPath);
@@ -379,6 +399,8 @@ export async function createDynamicVideo(options: {
     ]);
   } catch (err) {
     unlinkIfExists(videoBurned);
+    unlinkIfExists(captionsAss);
+    unlinkIfExists(tickerAss);
     throw err;
   }
 
@@ -390,7 +412,7 @@ export async function createDynamicVideo(options: {
   if (fs.existsSync(combinedPath)) fs.unlinkSync(combinedPath);
   unlinkIfExists(videoBurned);
   unlinkIfExists(captionsAss);
-  unlinkIfExists(path.resolve("ticker_text.txt"));
+  unlinkIfExists(tickerAss);
 
   return output;
 }
@@ -423,21 +445,44 @@ function escapePathForVideoFilter(absPath: string): string {
 function buildVfBurnChain(opts: {
   captionFile?: string;
   captionsAssPath: string;
-  tickerSymbol?: string;
+  /** Second `subtitles=` pass — ticker on top (libass; no `drawtext`). */
+  tickerAssPath?: string;
 }): string {
   const filters: string[] = [`scale=${OUTPUT_W}:${OUTPUT_H}`];
-  if (opts.tickerSymbol) {
-    const tickerTextFile = path.resolve("ticker_text.txt");
-    fs.writeFileSync(tickerTextFile, `Ticker: ${opts.tickerSymbol}`, "utf8");
-    const ep = escapePathForVideoFilter(tickerTextFile);
-    filters.push(
-      `drawtext=textfile='${ep}':fontcolor=white:fontsize=${TICKER_FONT_PX}:x=(w-text_w)/2:y=${TICKER_BOX_Y}:box=1:boxcolor=${TICKER_BOX_COLOR}:boxborderw=10`
-    );
-  }
   if (opts.captionFile && fs.existsSync(opts.captionFile) && fs.existsSync(opts.captionsAssPath)) {
     filters.push(`subtitles='${escapePathForVideoFilter(opts.captionsAssPath)}'`);
   }
+  if (opts.tickerAssPath && fs.existsSync(opts.tickerAssPath)) {
+    filters.push(`subtitles='${escapePathForVideoFilter(opts.tickerAssPath)}'`);
+  }
   return filters.join(",");
+}
+
+/** Top banner via ASS — works on builds with libass only (no libfreetype / drawtext). */
+function writeTickerAss(assPath: string, symbol: string, durationSec: number): void {
+  const end = secondsToAssTime(Math.max(0, durationSec));
+  const label = `Ticker: ${symbol}`
+    .replace(/\\/g, "\\\\")
+    .replace(/{/g, "\\{")
+    .replace(/}/g, "\\}");
+  const y = TICKER_BOX_Y;
+  const x = Math.round(OUTPUT_W / 2);
+  const header = `[Script Info]
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+PlayResX: ${OUTPUT_W}
+PlayResY: ${OUTPUT_H}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Ticker,Arial,${TICKER_FONT_PX},&H00FFFFFF,&H000000FF,&H00000000,&HC0000000,1,0,0,0,100,100,0,0,3,3,0,8,10,10,${y},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,${end},Ticker,,,0,0,0,,{\\an8\\pos(${x},${y})\\b1}${label}
+`;
+  fs.writeFileSync(assPath, header, "utf8");
 }
 
 function parseSrtTimestamp(ts: string): number {
