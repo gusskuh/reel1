@@ -25,7 +25,30 @@ const OUTPUT_H = 1280;
 const OUT_SCALE = OUTPUT_W / 1080;
 const TICKER_FONT_PX = Math.round(48 * OUT_SCALE);
 const TICKER_BOX_Y = Math.round(40 * OUT_SCALE);
-const SUBTITLE_MARGIN_V = Math.round(60 * OUT_SCALE);
+/**
+ * ASS margins per subtitle preset: bigger type needs more side inset (outline/glow clipping)
+ * and higher bottom inset (multi-line blocks stay in frame). Inset is a margin — lower = wider text.
+ */
+const SUBTITLE_ASS_LAYOUT: Record<
+  SubtitleSize,
+  { fontPx: number; sideInset: number; marginV: number }
+> = {
+  s: {
+    fontPx: Math.max(34, Math.round(44 * OUT_SCALE)),
+    sideInset: Math.max(58, Math.round(OUTPUT_W * 0.09)),
+    marginV: Math.round(76 * OUT_SCALE),
+  },
+  m: {
+    fontPx: Math.max(54, Math.round(72 * OUT_SCALE)),
+    sideInset: Math.max(72, Math.round(OUTPUT_W * 0.11)),
+    marginV: Math.round(108 * OUT_SCALE),
+  },
+  l: {
+    fontPx: Math.max(66, Math.round(90 * OUT_SCALE)),
+    sideInset: Math.max(92, Math.round(OUTPUT_W * 0.13)),
+    marginV: Math.round(138 * OUT_SCALE),
+  },
+};
 
 /** Pass-1 output (video only, captions + ticker burned). Pass-2 muxes voice with `-c:v copy` — no `-filter_complex`. */
 const VIDEO_BURNED_FILE = "video_burned.mp4";
@@ -432,12 +455,6 @@ function escapeDrawText(text: string): string {
     .replace(/%/g, "\\%");  // Escape percent signs
 }
 
-const SUBTITLE_FONT_SIZES: Record<SubtitleSize, number> = {
-  s: Math.max(8, Math.round(14 * OUT_SCALE)),
-  m: Math.max(10, Math.round(20 * OUT_SCALE)),
-  l: Math.max(12, Math.round(28 * OUT_SCALE)),
-};
-
 function escapePathForVideoFilter(absPath: string): string {
   return absPath.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'");
 }
@@ -461,10 +478,7 @@ function buildVfBurnChain(opts: {
 /** Top banner via ASS — works on builds with libass only (no libfreetype / drawtext). */
 function writeTickerAss(assPath: string, symbol: string, durationSec: number): void {
   const end = secondsToAssTime(Math.max(0, durationSec));
-  const label = `Ticker: ${symbol}`
-    .replace(/\\/g, "\\\\")
-    .replace(/{/g, "\\{")
-    .replace(/}/g, "\\}");
+  const label = escapeAssDialogueRow(`Ticker: ${symbol}`);
   const y = TICKER_BOX_Y;
   const x = Math.round(OUTPUT_W / 2);
   const header = `[Script Info]
@@ -480,7 +494,7 @@ Style: Ticker,Arial,${TICKER_FONT_PX},&H00FFFFFF,&H000000FF,&H00000000,&HC000000
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.00,${end},Ticker,,,0,0,0,,{\\an8\\pos(${x},${y})\\b1}${label}
+Dialogue: 0,0:00:00.00,${end},Ticker,,0,0,0,,{\\an8\\pos(${x},${y})\\b1}${label}
 `;
   fs.writeFileSync(assPath, header, "utf8");
 }
@@ -504,11 +518,62 @@ function secondsToAssTime(sec: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
+/** Extra horizontal slack so outline/glow does not clip at the frame edge after wrapping. */
+const SUBTITLE_OUTLINE_PAD_PX = 56;
+
+function maxCharsPerCaptionLine(sideInset: number, fontPx: number): number {
+  const usablePx = Math.max(100, OUTPUT_W - 2 * sideInset - SUBTITLE_OUTLINE_PAD_PX);
+  const approxCharWidth = Math.max(fontPx * 0.34, 11);
+  return Math.max(10, Math.floor(usablePx / approxCharWidth));
+}
+
+/** Word-wrap a single cue to ASS hard line breaks (`\\N`) so libass never lays out one ultra-wide line. */
+function wrapCaptionWordsToAssLines(line: string, maxChars: number): string {
+  const normalized = line.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) return normalized;
+  const words = normalized.split(" ");
+  const rows: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if (!w) continue;
+    if (w.length > maxChars) {
+      if (cur.length > 0) {
+        rows.push(cur);
+        cur = "";
+      }
+      for (let i = 0; i < w.length; i += maxChars) {
+        rows.push(w.slice(i, i + maxChars));
+      }
+      continue;
+    }
+    const next = cur ? `${cur} ${w}` : w;
+    if (next.length > maxChars && cur.length > 0) {
+      rows.push(cur);
+      cur = w;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) rows.push(cur);
+  return rows.join("\\N");
+}
+
+/**
+ * Escape one visual row for the final ASS `Dialogue` **Text** field only.
+ * Text may contain unescaped commas (libass: only non-Text fields forbid commas).
+ * Escaping commas as `\,` is wrong here — it can render a visible “slash” before the comma.
+ */
+function escapeAssDialogueRow(row: string): string {
+  return row
+    .replace(/\\/g, "\\\\")
+    .replace(/{/g, "\\{")
+    .replace(/}/g, "\\}");
+}
+
 /** SRT → ASS so libass reads font size / margins from the file (no `force_style` in ffmpeg args). */
 function srtToAss(srtPath: string, assPath: string, subtitleSize: SubtitleSize): void {
   const raw = fs.readFileSync(srtPath, "utf8");
-  const fontSize = SUBTITLE_FONT_SIZES[subtitleSize];
-  const marginV = SUBTITLE_MARGIN_V;
+  const { fontPx, sideInset, marginV } = SUBTITLE_ASS_LAYOUT[subtitleSize];
   const header = `[Script Info]
 ScriptType: v4.00+
 WrapStyle: 0
@@ -518,7 +583,7 @@ PlayResY: ${OUTPUT_H}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,3,1,0,2,10,10,${marginV},1
+Style: Default,Arial,${fontPx},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,${sideInset},${sideInset},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -538,13 +603,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if (!timeMatch) continue;
     const start = secondsToAssTime(parseSrtTimestamp(timeMatch[1]));
     const end = secondsToAssTime(parseSrtTimestamp(timeMatch[2]));
-    const text = parts
+    const rawCue = parts
       .slice(ti + 1)
-      .join("\\N")
-      .replace(/\\/g, "\\\\")
-      .replace(/{/g, "\\{")
-      .replace(/}/g, "\\}");
-    dialogues.push(`Dialogue: 0,${start},${end},Default,,,0,0,0,,${text}`);
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const maxChars = maxCharsPerCaptionLine(sideInset, fontPx);
+    const wrapped = wrapCaptionWordsToAssLines(rawCue, maxChars);
+    // Escape per row, then `\N` line breaks — global `\\` replace would turn `\N` into `\\N` and show stray "\" on screen.
+    const text = wrapped.split("\\N").map(escapeAssDialogueRow).join("\\N");
+       // ASS fields: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text — only ONE comma for empty Name (not `,,,`).
+    dialogues.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an2}${text}`);
   }
   fs.writeFileSync(assPath, header + dialogues.join("\n") + "\n", "utf8");
 }

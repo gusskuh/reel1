@@ -2,10 +2,12 @@ import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
 
-interface NewsItem {
+export interface NewsItem {
   title: string;
   date: string;
   content: string;
+  /** Raw symbol from the API when present (validated later — may still be a venue). */
+  symbol?: string;
 }
 
 interface ApiNewsItem {
@@ -16,6 +18,10 @@ interface ApiNewsItem {
   publishedDate?: string;
   date?: string;
   site: string;
+  symbol?: string;
+  ticker?: string;
+  stock?: string;
+  stockSymbol?: string;
 }
 
 export async function fetchMarketNews(): Promise<NewsItem | null> {
@@ -39,11 +45,18 @@ export async function fetchMarketNews(): Promise<NewsItem | null> {
       // Get content from any available field
       const content = selectedItem.text || selectedItem.content || selectedItem.description || 
                      (selectedItem as any).body || (selectedItem as any).article || 'No content available';
-      
+      const rawSymbol =
+        selectedItem.symbol ||
+        selectedItem.ticker ||
+        selectedItem.stock ||
+        selectedItem.stockSymbol ||
+        (typeof (selectedItem as any).tickers === "string" ? (selectedItem as any).tickers : undefined);
+
       return {
         title: selectedItem.title,
         date: selectedItem.publishedDate || selectedItem.date || 'N/A',
         content: content,
+        ...(rawSymbol ? { symbol: String(rawSymbol).trim() } : {}),
       };
 }
   } catch (error) {

@@ -13,6 +13,7 @@ import { uploadToYouTube, generateVideoMetadata } from "./uploadToYouTube";
 import { uploadToTikTok, generateTikTokMetadata } from "./uploadToTikTok";
 import { uploadToX, generateXMetadata } from "./uploadToX";
 import { uploadToInstagram, generateInstagramMetadata } from "./uploadToInstagram";
+import { extractTickerFromNews } from "../lib/extractTickerSymbol";
 
 async function main() {
   try {
@@ -24,9 +25,10 @@ async function main() {
     }
     console.log(`✅ Found article: ${JSON.stringify(news)}\n`);
     
-    // Extract ticker symbol from title (look for uppercase letters, typically 1-5 chars)
-    const tickerMatch = news.title.match(/\b([A-Z]{1,5})\b/);
-    const tickerSymbol = tickerMatch ? tickerMatch[1] : undefined;
+    const tickerSymbol = extractTickerFromNews(
+      { title: news.title, content: news.content },
+      news.symbol
+    );
     if (tickerSymbol) {
       console.log(`📊 Ticker symbol detected: ${tickerSymbol}\n`);
     }

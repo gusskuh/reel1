@@ -3,6 +3,7 @@
  */
 import path from "path";
 import { fetchMarketNews } from "../scripts/fetchNews";
+import { extractTickerFromNews } from "./extractTickerSymbol";
 import { OpenAI } from "openai";
 import dotenv from "dotenv";
 
@@ -345,8 +346,10 @@ export async function getContentByNiche(niche: Niche): Promise<ContentResult> {
     throw new Error("No financial news available");
   }
 
-  const tickerMatch = news.title.match(/\b([A-Z]{1,5})\b/);
-  const tickerSymbol = tickerMatch ? tickerMatch[1] : undefined;
+  const tickerSymbol = extractTickerFromNews(
+    { title: news.title, content: news.content },
+    news.symbol
+  );
 
   return {
     title: news.title,
