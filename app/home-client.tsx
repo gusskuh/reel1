@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { NICHE_OPTIONS, nicheDisplayLabel, type Niche } from "@/lib/nicheConfig";
 import { NICHE_SEO } from "@/lib/nicheSeoContent";
 import GeneratingStatus from "./components/GeneratingStatus";
+import { RATE_LIMIT_REFRESH_EVENT } from "./components/RateLimitDots";
 
 const POLL_INTERVAL_MS = 5000;
 /** Retries when host returns 502/empty body (OOM/restart on small instances). */
@@ -106,6 +107,9 @@ export default function HomeClient({
         limit: data.limit,
         resetAt: data.resetAt,
       });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(RATE_LIMIT_REFRESH_EVENT));
+      }
     } catch {
       // ignore
     }
@@ -185,6 +189,9 @@ export default function HomeClient({
           limit: rl.limit,
           resetAt: rl.resetAt ?? null,
         });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event(RATE_LIMIT_REFRESH_EVENT));
+        }
       }
       setJobId(id);
       setStatus("processing");
@@ -334,42 +341,7 @@ export default function HomeClient({
       </p>
 
       {rateLimit && (
-        <div
-          style={{
-            marginBottom: "1.25rem",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "0.5rem",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: "0.35rem",
-              alignItems: "center",
-            }}
-            aria-label={`${rateLimit.remaining} of ${rateLimit.limit} free reels left this hour`}
-          >
-            {Array.from({ length: rateLimit.limit }).map((_, i) => (
-              <span
-                key={i}
-                style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: "50%",
-                  background:
-                    i < rateLimit.remaining
-                      ? "linear-gradient(135deg, #00d4ff, #7c3aed)"
-                      : "rgba(255,255,255,0.12)",
-                  boxShadow:
-                    i < rateLimit.remaining
-                      ? "0 0 10px rgba(0, 212, 255, 0.35)"
-                      : "none",
-                }}
-              />
-            ))}
-          </div>
+        <div style={{ marginBottom: "1.25rem", textAlign: "center" }}>
           <p style={{ fontSize: "0.9rem", color: "#9ca3af" }}>
             <span style={{ color: "#e8e8e8", fontWeight: 600 }}>
               {rateLimit.remaining}/{rateLimit.limit}
