@@ -55,30 +55,16 @@ export default function RateLimitDots() {
 
   return (
     <div
-      style={{
-        display: "flex",
-        gap: "0.6rem",
-        alignItems: "center",
-      }}
+      className="rate-limit-row"
       aria-label={`${rateLimit.remaining} of ${rateLimit.limit} free reels left this hour`}
     >
-      <span
-        style={{
-          fontSize: "0.75rem",
-          color: "#9ca3af",
-          whiteSpace: "nowrap",
-        }}
-      >
-        Free reels left
-      </span>
-      <div style={{ display: "flex", gap: "0.35rem", alignItems: "center" }}>
+      <span className="rate-limit-label">{rateLimit.remaining} reels left</span>
+      <div className="rate-limit-dot-track">
         {Array.from({ length: rateLimit.limit }).map((_, i) => (
           <span
             key={i}
+            className="rate-limit-dot"
             style={{
-              width: 12,
-              height: 12,
-              borderRadius: "50%",
               background:
                 i < rateLimit.remaining
                   ? "linear-gradient(135deg, #00d4ff, #7c3aed)"
