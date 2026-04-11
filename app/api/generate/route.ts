@@ -3,10 +3,17 @@ import fs from "fs";
 import path from "path";
 import { createJob, deleteJob, setJob } from "@/lib/jobs";
 import { runReelPipeline } from "@/lib/runReelPipeline";
-import { checkRateLimit, getRateLimitStatus } from "@/lib/rateLimit";
+import {
+  getReelQuotaSnapshot,
+  getUserReelQuotaWithAdmin,
+  tryConsumeGuestReel,
+  tryConsumeUserReelCredit,
+} from "@/lib/reelQuota";
 import { isJobIdString, removeReelUploadFile } from "@/lib/reelCleanup";
 import { getUploadsDir } from "@/lib/dataRoot";
 import { isValidNiche, type Niche } from "@/lib/nicheConfig";
+import { getServiceRoleClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 /** Vercel / Render: allow long pipeline (requires Pro on Vercel for >60s). */
@@ -17,11 +24,6 @@ export async function POST(req: Request) {
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "127.0.0.1";
-
-  const { ok, error } = checkRateLimit(ip);
-  if (!ok) {
-    return NextResponse.json({ error: error || "Rate limit exceeded" }, { status: 429 });
-  }
 
   let voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy";
   let subtitleSize: "s" | "m" | "l" = "m";
@@ -43,6 +45,51 @@ export async function POST(req: Request) {
     }
   } catch {
     // use defaults
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let serviceAdmin: ReturnType<typeof getServiceRoleClient> = null;
+
+  if (user) {
+    serviceAdmin = getServiceRoleClient();
+    if (!serviceAdmin) {
+      return NextResponse.json(
+        {
+          error:
+            "Missing SUPABASE_SERVICE_ROLE_KEY. In Supabase: Project Settings → API → copy the service_role secret into .env (server only), restart the dev server, and add the same var on Render. Never put this key in NEXT_PUBLIC_* or client code.",
+        },
+        { status: 500 }
+      );
+    }
+    const consumed = await tryConsumeUserReelCredit(serviceAdmin, user.id);
+    if (!consumed.ok) {
+      const rateLimit = await getUserReelQuotaWithAdmin(serviceAdmin, user.id);
+      return NextResponse.json(
+        {
+          error: "No reel credits left.",
+          code: "needs_credits",
+          rateLimit,
+        },
+        { status: 403 }
+      );
+    }
+  } else {
+    const guestOk = await tryConsumeGuestReel(ip);
+    if (!guestOk.ok) {
+      const rateLimit = await getReelQuotaSnapshot(ip, null, null);
+      return NextResponse.json(
+        {
+          error: "You’ve used all free guest reels. Create a free account to get more reel credits.",
+          code: "needs_register",
+          rateLimit,
+        },
+        { status: 403 }
+      );
+    }
   }
 
   if (previousJobId) {
@@ -85,6 +132,9 @@ export async function POST(req: Request) {
     waitUntil(pipelinePromise);
   }
 
-  const rateLimit = getRateLimitStatus(ip);
+  const rateLimit =
+    user && serviceAdmin
+      ? await getUserReelQuotaWithAdmin(serviceAdmin, user.id)
+      : await getReelQuotaSnapshot(ip, user?.id ?? null, supabase);
   return NextResponse.json({ jobId, rateLimit }, { status: 202 });
 }

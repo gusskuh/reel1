@@ -10,6 +10,7 @@ type RateInfo = {
   remaining: number;
   limit: number;
   resetAt: number | null;
+  kind: "guest" | "user";
 };
 
 async function readJsonBody<T>(r: Response): Promise<T | null> {
@@ -36,6 +37,7 @@ export default function RateLimitDots() {
         remaining: data.remaining,
         limit: data.limit,
         resetAt: data.resetAt,
+        kind: data.kind === "user" ? "user" : "guest",
       });
     } catch {
       // ignore
@@ -53,12 +55,19 @@ export default function RateLimitDots() {
 
   if (!rateLimit) return null;
 
+  const aria =
+    rateLimit.kind === "user"
+      ? `${rateLimit.remaining} reel credits of ${rateLimit.limit} shown in the meter`
+      : `${rateLimit.remaining} of ${rateLimit.limit} free guest reels remaining`;
+
+  const label =
+    rateLimit.kind === "user"
+      ? `${rateLimit.remaining} credits`
+      : `${rateLimit.remaining} free`;
+
   return (
-    <div
-      className="rate-limit-row"
-      aria-label={`${rateLimit.remaining} of ${rateLimit.limit} free reels left this hour`}
-    >
-      <span className="rate-limit-label">{rateLimit.remaining} reels left</span>
+    <div className="rate-limit-row" aria-label={aria}>
+      <span className="rate-limit-label">{label}</span>
       <div className="rate-limit-dot-track">
         {Array.from({ length: rateLimit.limit }).map((_, i) => (
           <span

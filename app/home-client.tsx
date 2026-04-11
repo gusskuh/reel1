@@ -1,9 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import { NICHE_OPTIONS, nicheDisplayLabel, type Niche } from "@/lib/nicheConfig";
 import { NICHE_SEO } from "@/lib/nicheSeoContent";
+import { USER_SIGNUP_REEL_CREDITS } from "@/lib/reelQuotaConstants";
 import GeneratingStatus from "./components/GeneratingStatus";
+import RegisterBonusModal from "./components/RegisterBonusModal";
 import { RATE_LIMIT_REFRESH_EVENT } from "./components/RateLimitDots";
 
 const POLL_INTERVAL_MS = 5000;
@@ -30,6 +33,7 @@ type RateLimitInfo = {
   remaining: number;
   limit: number;
   resetAt: number | null;
+  kind: "guest" | "user";
 };
 
 const VOICE_OPTIONS: { value: string; label: string }[] = [
@@ -63,6 +67,8 @@ export default function HomeClient({
   const [subtitleSize, setSubtitleSize] = useState<"s" | "m" | "l">("m");
   const [niche, setNiche] = useState<Niche>(() => initialNiche ?? "financial");
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
+  const [quotaGate, setQuotaGate] = useState<"none" | "register" | "credits">("none");
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
 
   const [tiktokConfigured, setTiktokConfigured] = useState<boolean | null>(null);
   const [tiktokConnected, setTiktokConnected] = useState(false);
@@ -99,6 +105,7 @@ export default function HomeClient({
         remaining: number;
         limit: number;
         resetAt: number | null;
+        kind?: "guest" | "user";
       }>(r);
       if (!data) return;
       setRateLimit({
@@ -106,6 +113,7 @@ export default function HomeClient({
         remaining: data.remaining,
         limit: data.limit,
         resetAt: data.resetAt,
+        kind: data.kind === "user" ? "user" : "guest",
       });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event(RATE_LIMIT_REFRESH_EVENT));
@@ -118,6 +126,16 @@ export default function HomeClient({
   useEffect(() => {
     refreshRateLimit();
   }, [refreshRateLimit]);
+
+  /** Stale banners: e.g. needs_credits after a failed generate, then quota fixed / refetched. */
+  useEffect(() => {
+    if (!rateLimit) return;
+    setQuotaGate((prev) => {
+      if (rateLimit.remaining > 0 && prev === "credits") return "none";
+      if (rateLimit.kind === "user" && prev === "register") return "none";
+      return prev;
+    });
+  }, [rateLimit]);
 
   useEffect(() => {
     refreshTiktokStatus();
@@ -144,6 +162,7 @@ export default function HomeClient({
   async function handleGenerate() {
     setLoading(true);
     setError(null);
+    setQuotaGate("none");
     const previousJobId = jobId;
     setJobId(null);
     setStatus(null);
@@ -163,9 +182,46 @@ export default function HomeClient({
         }),
       });
       if (!res.ok) {
-        const errBody = await readJsonBody<{ error?: string }>(res);
-        if (res.status === 429) {
-          await refreshRateLimit();
+        const errBody = await readJsonBody<{
+          error?: string;
+          code?: string;
+          rateLimit?: RateLimitInfo;
+        }>(res);
+        await refreshRateLimit();
+        if (res.status === 403 && errBody?.code === "needs_register") {
+          setQuotaGate("register");
+          setRegisterModalOpen(true);
+          if (errBody.rateLimit) {
+            setRateLimit({
+              used: errBody.rateLimit.used,
+              remaining: errBody.rateLimit.remaining,
+              limit: errBody.rateLimit.limit,
+              resetAt: errBody.rateLimit.resetAt ?? null,
+              kind: errBody.rateLimit.kind ?? "guest",
+            });
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new Event(RATE_LIMIT_REFRESH_EVENT));
+            }
+          }
+          throw new Error(
+            errBody?.error || "Create a free account to keep generating reels."
+          );
+        }
+        if (res.status === 403 && errBody?.code === "needs_credits") {
+          setQuotaGate("credits");
+          if (errBody.rateLimit) {
+            setRateLimit({
+              used: errBody.rateLimit.used,
+              remaining: errBody.rateLimit.remaining,
+              limit: errBody.rateLimit.limit,
+              resetAt: errBody.rateLimit.resetAt ?? null,
+              kind: "user",
+            });
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new Event(RATE_LIMIT_REFRESH_EVENT));
+            }
+          }
+          throw new Error(errBody?.error || "No reel credits left.");
         }
         throw new Error(errBody?.error || `Request failed: ${res.status}`);
       }
@@ -176,6 +232,7 @@ export default function HomeClient({
           remaining: number;
           limit: number;
           resetAt?: number | null;
+          kind?: "guest" | "user";
         };
       }>(res);
       if (!data?.jobId) {
@@ -188,6 +245,7 @@ export default function HomeClient({
           remaining: rl.remaining,
           limit: rl.limit,
           resetAt: rl.resetAt ?? null,
+          kind: rl.kind === "user" ? "user" : "guest",
         });
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event(RATE_LIMIT_REFRESH_EVENT));
@@ -337,7 +395,7 @@ export default function HomeClient({
       <p style={{ marginBottom: "1rem", color: "#a0a0a0", maxWidth: "32rem" }}>
         {nicheLanding
           ? NICHE_SEO[niche].heroLead
-          : "Pick a category — Stocks News from market data, or top headlines (US). One click, no account needed."}
+          : `Pick a category — Stocks News from market data, or top headlines (US). Three free reels as a guest, then a quick free account for ${USER_SIGNUP_REEL_CREDITS} more.`}
       </p>
 
       {rateLimit && (
@@ -346,17 +404,73 @@ export default function HomeClient({
             <span style={{ color: "#e8e8e8", fontWeight: 600 }}>
               {rateLimit.remaining}/{rateLimit.limit}
             </span>{" "}
-            reels left this hour
-            {rateLimit.remaining === 0 && rateLimit.resetAt && (
-              <span style={{ display: "block", marginTop: "0.25rem", fontSize: "0.8rem" }}>
-                Resets{" "}
-                {new Date(rateLimit.resetAt).toLocaleTimeString(undefined, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}
-              </span>
-            )}
+            {rateLimit.kind === "user" ? "reel credits" : "free guest reels"}
           </p>
+        </div>
+      )}
+
+      {quotaGate === "register" && (
+        <div
+          style={{
+            marginBottom: "1.25rem",
+            maxWidth: "26rem",
+            padding: "1rem 1.25rem",
+            borderRadius: "0.5rem",
+            border: "1px solid rgba(0, 212, 255, 0.35)",
+            background: "rgba(0, 212, 255, 0.08)",
+            textAlign: "center",
+          }}
+        >
+          <p style={{ fontSize: "0.95rem", color: "#e8e8e8", marginBottom: "0.75rem" }}>
+            You’ve used all free guest reels. Create a free account to unlock{" "}
+            <strong style={{ color: "#7dd3fc" }}>{USER_SIGNUP_REEL_CREDITS} bonus credits</strong>.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", justifyContent: "center" }}>
+            <Link
+              href="/register"
+              style={{
+                padding: "0.55rem 1.1rem",
+                borderRadius: "0.375rem",
+                fontWeight: 600,
+                fontSize: "0.9rem",
+                background: "linear-gradient(90deg, #00d4ff, #7c3aed)",
+                color: "#0a0a12",
+              }}
+            >
+              Sign up free
+            </Link>
+            <Link
+              href="/login"
+              style={{
+                padding: "0.55rem 1.1rem",
+                borderRadius: "0.375rem",
+                fontWeight: 500,
+                fontSize: "0.9rem",
+                border: "1px solid rgba(255,255,255,0.25)",
+                color: "#e8e8e8",
+              }}
+            >
+              Log in
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {quotaGate === "credits" && (
+        <div
+          style={{
+            marginBottom: "1.25rem",
+            maxWidth: "26rem",
+            padding: "1rem 1.25rem",
+            borderRadius: "0.5rem",
+            border: "1px solid rgba(248, 113, 113, 0.35)",
+            background: "rgba(248, 113, 113, 0.08)",
+            fontSize: "0.95rem",
+            color: "#fecaca",
+            textAlign: "center",
+          }}
+        >
+          You’re out of reel credits. More ways to top up are coming soon.
         </div>
       )}
 
@@ -474,8 +588,17 @@ export default function HomeClient({
       </div>
 
       <button
-        onClick={handleGenerate}
-        disabled={loading || (rateLimit !== null && rateLimit.remaining === 0)}
+        type="button"
+        onClick={() => {
+          if (rateLimit?.kind === "guest" && rateLimit.remaining === 0) {
+            setRegisterModalOpen(true);
+            return;
+          }
+          void handleGenerate();
+        }}
+        disabled={
+          loading || (rateLimit?.kind === "user" && rateLimit.remaining === 0)
+        }
         style={{
           padding: "1rem 2rem",
           fontSize: "1.1rem",
@@ -483,12 +606,13 @@ export default function HomeClient({
           border: "none",
           borderRadius: "0.5rem",
           background:
-            loading || (rateLimit !== null && rateLimit.remaining === 0)
+            loading || (rateLimit?.kind === "user" && rateLimit.remaining === 0)
               ? "#333"
-              : "linear-gradient(90deg, #00d4ff, #7c3aed)",
+              : rateLimit?.kind === "guest" && rateLimit.remaining === 0 ? "linear-gradient(90deg, #0891b2, #7c3aed)"
+                : "linear-gradient(90deg, #00d4ff, #7c3aed)",
           color: "#fff",
           cursor:
-            loading || (rateLimit !== null && rateLimit.remaining === 0)
+            loading || (rateLimit?.kind === "user" && rateLimit.remaining === 0)
               ? "not-allowed"
               : "pointer",
           boxShadow: "0 4px 20px rgba(0, 212, 255, 0.3)",
@@ -497,10 +621,17 @@ export default function HomeClient({
       >
         {loading
           ? "Generating…"
-          : rateLimit !== null && rateLimit.remaining === 0
-            ? "Hourly limit reached"
-            : "Generate Reel"}
+          : rateLimit?.kind === "user" && rateLimit.remaining === 0
+            ? "No credits left"
+            : rateLimit?.kind === "guest" && rateLimit.remaining === 0
+              ? "Guest limit reached — tap to continue"
+              : "Generate Reel"}
       </button>
+
+      <RegisterBonusModal
+        open={registerModalOpen}
+        onClose={() => setRegisterModalOpen(false)}
+      />
 
       <GeneratingStatus active={loading} />
 

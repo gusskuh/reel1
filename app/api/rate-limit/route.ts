@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { getRateLimitStatus } from "@/lib/rateLimit";
+import { getReelQuotaSnapshot, getUserReelQuotaWithAdmin } from "@/lib/reelQuota";
+import { getServiceRoleClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export async function GET(req: Request) {
   const ip =
@@ -7,6 +9,19 @@ export async function GET(req: Request) {
     req.headers.get("x-real-ip") ||
     "127.0.0.1";
 
-  const status = getRateLimitStatus(ip);
-  return NextResponse.json(status);
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    const admin = getServiceRoleClient();
+    if (admin) {
+      const snapshot = await getUserReelQuotaWithAdmin(admin, user.id);
+      return NextResponse.json(snapshot);
+    }
+  }
+
+  const snapshot = await getReelQuotaSnapshot(ip, user?.id ?? null, supabase);
+  return NextResponse.json(snapshot);
 }
