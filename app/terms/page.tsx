@@ -1,9 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SITE_NAME, getSiteUrl } from "@/lib/seoConfig";
+
+const desc = "Terms of Service for using ReelGen to create AI-powered short-form videos.";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — ReelGen",
-  description: "Terms of Service for ReelGen",
+  title: `Terms of Service`,
+  description: desc,
+  keywords: ["ReelGen terms", "AI video generator terms"],
+  alternates: { canonical: "/terms" },
+  openGraph: {
+    title: `Terms of Service — ${SITE_NAME}`,
+    description: desc,
+    url: `${getSiteUrl()}/terms`,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: `Terms of Service — ${SITE_NAME}`,
+    description: desc,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function TermsPage() {

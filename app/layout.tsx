@@ -2,11 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
+import { rootLayoutMetadata } from "@/lib/seoConfig";
 
-export const metadata: Metadata = {
-  title: "ReelGen - AI Reels",
-  description: "Generate AI-powered stock and headline reels in seconds",
-};
+export const metadata: Metadata = rootLayoutMetadata();
 
 export default function RootLayout({
   children,

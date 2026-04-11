@@ -1,9 +1,26 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { SITE_NAME, getSiteUrl } from "@/lib/seoConfig";
+
+const desc = "How ReelGen collects, uses, and protects your data when you generate AI reels.";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — ReelGen",
-  description: "Privacy Policy for ReelGen",
+  title: `Privacy Policy`,
+  description: desc,
+  keywords: ["ReelGen privacy", "AI reel generator privacy"],
+  alternates: { canonical: "/privacy" },
+  openGraph: {
+    title: `Privacy Policy — ${SITE_NAME}`,
+    description: desc,
+    url: `${getSiteUrl()}/privacy`,
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: `Privacy Policy — ${SITE_NAME}`,
+    description: desc,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function PrivacyPage() {
