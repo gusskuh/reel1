@@ -11,7 +11,7 @@ export async function generateSceneVideos(script: string, defaultKeyword = "moti
 Split this narration into short visual scenes (max 5 seconds each).
 Use at most ${MAX_REEL_SCENES} scenes total (~30 seconds of video).
 For each scene, return JSON with "text" (narration snippet) and "keywords" (visual topics for stock footage).
-Use Pexels-friendly keywords: nature, city, success, teamwork, sunrise, etc. for inspirational content; or stocks, finance, charts for financial.
+Use Pexels-friendly keywords that match the script tone (news, business, tech, sports, etc.).
 Narration:
 ${script}
 

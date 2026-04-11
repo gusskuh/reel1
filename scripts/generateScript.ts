@@ -1,22 +1,16 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import { MAX_REEL_DURATION_SEC } from "../lib/reelLimits";
+import type { Niche } from "../lib/nicheConfig";
+import { nicheDisplayLabel } from "../lib/nicheConfig";
+
 dotenv.config();
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export type ScriptNiche =
-  | "financial"
-  | "inspirational"
-  | "health"
-  | "news"
-  | "fitness"
-  | "finance"
-  | "tech"
-  | "food"
-  | "relationships";
+export type ScriptNiche = Niche;
 
 /** Appended to every niche prompt so TTS + video stay within the cap. */
 const LENGTH_RULE = `\n\nSpoken length: at most ${MAX_REEL_DURATION_SEC} seconds (~75 words). Do not exceed.`;
@@ -25,108 +19,28 @@ export async function generateReelScript(
   input: { title: string; content: string },
   niche: ScriptNiche = "financial"
 ): Promise<string> {
+  const label = nicheDisplayLabel(niche);
+
   const prompt =
-    niche === "inspirational"
+    niche === "financial"
       ? `
-You are an inspirational content creator making short social media reels.
+You are a financial content creator making short social media reels.
 
-Polish this motivational script for a 30-second video. Keep the same message but:
-- Make it punchy and quotable
-- Ensure a strong hook and satisfying close
-- Natural for spoken delivery
+Summarize this news article in a conversational and energetic tone that would fit a 30-second video.
+Make it clear, engaging, and suitable for a general audience — not too technical.
 
-Content:
-${input.content}
-`
-      : niche === "health"
-      ? `
-You are a health and wellness content creator making short social media reels.
+Include a one-line hook at the start, then the main point, and a closing line that feels complete.
 
-Polish this health script for a 30-second video. Keep the same message but:
-- Make it clear and trustworthy
-- Ensure a strong hook and actionable close
-- Natural for spoken delivery
-
-Content:
-${input.content}
-`
-      : niche === "news"
-      ? `
-You are a world news anchor making short social media reels.
-
-Polish this news script for a 30-second video. Keep the same message but:
-- Clear, informative, and neutral
-- Ensure a strong hook and satisfying close
-- Natural for spoken delivery
-
-Content:
-${input.content}
-`
-      : niche === "fitness"
-      ? `
-You are a fitness creator making short social media reels.
-
-Polish this fitness script for a 30-second video. Keep the same message but:
-- Energetic and motivating
-- Ensure a strong hook and actionable close
-- Natural for spoken delivery
-
-Content:
-${input.content}
-`
-      : niche === "finance"
-      ? `
-You are a personal finance creator making short social media reels.
-
-Polish this money tips script for a 30-second video. Keep the same message but:
-- Clear and practical
-- Ensure a strong hook and actionable close
-- Natural for spoken delivery
-
-Content:
-${input.content}
-`
-      : niche === "tech"
-      ? `
-You are a tech and AI creator making short social media reels.
-
-Polish this tech script for a 30-second video. Keep the same message but:
-- Clear and helpful
-- Ensure a strong hook and satisfying close
-- Natural for spoken delivery
-
-Content:
-${input.content}
-`
-      : niche === "food"
-      ? `
-You are a food and recipe creator making short social media reels.
-
-Polish this food script for a 30-second video. Keep the same message but:
-- Appetizing and friendly
-- Ensure a strong hook and satisfying close
-- Natural for spoken delivery
-
-Content:
-${input.content}
-`
-      : niche === "relationships"
-      ? `
-You are a relationship advice creator making short social media reels.
-
-Polish this dating/relationships script for a 30-second video. Keep the same message but:
-- Warm and relatable
-- Ensure a strong hook and satisfying close
-- Natural for spoken delivery
+News title: ${input.title}
 
 Content:
 ${input.content}
 `
       : `
-You are a financial content creator making short social media reels.
+You are a news creator making short social media reels for a general audience.
 
-Summarize this news article in a conversational and energetic tone that would fit a 30-second video.
-Make it clear, engaging, and suitable for a general audience — not too technical.
+Summarize this ${label} story in a conversational, energetic tone for a 30-second video.
+Stay accurate to the article — clear and engaging, not sensationalized.
 
 Include a one-line hook at the start, then the main point, and a closing line that feels complete.
 

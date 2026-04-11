@@ -5,7 +5,7 @@ import Footer from "./components/Footer";
 
 export const metadata: Metadata = {
   title: "ReelGen - AI Reels",
-  description: "Generate AI-powered financial news and inspirational reels in seconds",
+  description: "Generate AI-powered stock and headline reels in seconds",
 };
 
 export default function RootLayout({

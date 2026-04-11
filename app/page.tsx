@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { NICHE_OPTIONS, type Niche } from "@/lib/nicheConfig";
 import GeneratingStatus from "./components/GeneratingStatus";
 
 const POLL_INTERVAL_MS = 5000;
@@ -44,18 +45,6 @@ const SUBTITLE_OPTIONS: { value: string; label: string }[] = [
   { value: "l", label: "Large" },
 ];
 
-const NICHE_OPTIONS: { value: string; label: string }[] = [
-  { value: "financial", label: "Financial News" },
-  { value: "news", label: "World News" },
-  { value: "health", label: "Health" },
-  { value: "fitness", label: "Fitness" },
-  { value: "finance", label: "Personal Finance" },
-  { value: "tech", label: "Tech / AI" },
-  { value: "food", label: "Food & Recipes" },
-  { value: "relationships", label: "Relationships" },
-  { value: "inspirational", label: "Inspirational" },
-];
-
 export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<JobStatus | null>(null);
@@ -64,9 +53,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [voice, setVoice] = useState("alloy");
   const [subtitleSize, setSubtitleSize] = useState<"s" | "m" | "l">("m");
-  const [niche, setNiche] = useState<
-    "financial" | "inspirational" | "health" | "news" | "fitness" | "finance" | "tech" | "food" | "relationships"
-  >("financial");
+  const [niche, setNiche] = useState<Niche>("financial");
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null);
 
   const [tiktokConfigured, setTiktokConfigured] = useState<boolean | null>(null);
@@ -330,8 +317,8 @@ export default function Home() {
         AI Reels
       </h1>
       <p style={{ marginBottom: "1rem", color: "#a0a0a0", maxWidth: "32rem" }}>
-        Generate reels on finance, fitness, tech, food, relationships & more. One click, no
-        account needed.
+        Pick a category — Stocks News from market data, or top headlines. One
+        click, no account needed.
       </p>
 
       {rateLimit && (
@@ -413,20 +400,7 @@ export default function Home() {
           <select
             id="niche"
             value={niche}
-            onChange={(e) =>
-              setNiche(
-                e.target.value as
-                  | "financial"
-                  | "inspirational"
-                  | "health"
-                  | "news"
-                  | "fitness"
-                  | "finance"
-                  | "tech"
-                  | "food"
-                  | "relationships"
-              )
-            }
+            onChange={(e) => setNiche(e.target.value as Niche)}
             disabled={loading}
             style={{
               padding: "0.5rem 0.75rem",

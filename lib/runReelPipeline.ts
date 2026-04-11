@@ -13,13 +13,17 @@ import dotenv from "dotenv";
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 import { getPipelineTmpRoot } from "./dataRoot";
-import { getContentByNiche, type Niche } from "./contentByNiche";
+import { getContentByNiche } from "./contentByNiche";
+import type { Niche } from "./nicheConfig";
+import { SCENE_KEYWORDS } from "./nicheConfig";
 import { generateReelScript } from "../scripts/generateScript";
 import { generateSpeech } from "../scripts/generateSpeech";
 import { generateSceneVideos } from "../scripts/fetchSceneVideos";
 import { generateCaptions } from "../scripts/generateCaptions";
 import { createDynamicVideo } from "../scripts/createDynamicVideo";
 import { capAudioDurationInPlace } from "./capAudioDuration";
+
+export type { Niche } from "./nicheConfig";
 
 export interface RunReelPipelineOptions {
   workDir?: string;
@@ -59,24 +63,7 @@ export async function runReelPipeline(options?: RunReelPipelineOptions | string)
       const voicePath = await generateSpeech(script, "voice.mp3", voice);
       await capAudioDurationInPlace(voicePath);
 
-      const defaultKeyword =
-        niche === "inspirational"
-          ? "motivation"
-          : niche === "health"
-          ? "health wellness"
-          : niche === "news"
-          ? "world news"
-          : niche === "fitness"
-          ? "fitness workout"
-          : niche === "finance"
-          ? "money savings"
-          : niche === "tech"
-          ? "technology computer"
-          : niche === "food"
-          ? "cooking food"
-          : niche === "relationships"
-          ? "couple relationship"
-          : "financial news";
+      const defaultKeyword = SCENE_KEYWORDS[niche];
       const scenes = await generateSceneVideos(script, defaultKeyword);
       if (!scenes || scenes.length === 0) {
         throw new Error("No scenes generated");

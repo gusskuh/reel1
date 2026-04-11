@@ -6,6 +6,7 @@ import { runReelPipeline } from "@/lib/runReelPipeline";
 import { checkRateLimit, getRateLimitStatus } from "@/lib/rateLimit";
 import { isJobIdString, removeReelUploadFile } from "@/lib/reelCleanup";
 import { getUploadsDir } from "@/lib/dataRoot";
+import { isValidNiche, type Niche } from "@/lib/nicheConfig";
 
 export const runtime = "nodejs";
 /** Vercel / Render: allow long pipeline (requires Pro on Vercel for >60s). */
@@ -24,18 +25,7 @@ export async function POST(req: Request) {
 
   let voice: "alloy" | "echo" | "fable" | "onyx" | "nova" | "shimmer" = "alloy";
   let subtitleSize: "s" | "m" | "l" = "m";
-  const VALID_NICHES = [
-    "financial",
-    "inspirational",
-    "health",
-    "news",
-    "fitness",
-    "finance",
-    "tech",
-    "food",
-    "relationships",
-  ] as const;
-  let niche: (typeof VALID_NICHES)[number] = "financial";
+  let niche: Niche = "financial";
   let previousJobId: string | undefined;
   try {
     const body = await req.json().catch(() => ({}));
@@ -45,8 +35,8 @@ export async function POST(req: Request) {
     if (body.subtitleSize && ["s", "m", "l"].includes(body.subtitleSize)) {
       subtitleSize = body.subtitleSize;
     }
-    if (body.niche && VALID_NICHES.includes(body.niche as (typeof VALID_NICHES)[number])) {
-      niche = body.niche as (typeof VALID_NICHES)[number];
+    if (body.niche && typeof body.niche === "string" && isValidNiche(body.niche)) {
+      niche = body.niche;
     }
     if (typeof body.previousJobId === "string" && isJobIdString(body.previousJobId)) {
       previousJobId = body.previousJobId;
