@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
+import Providers from "./components/Providers";
 import { rootLayoutMetadata } from "@/lib/seoConfig";
 
 export const metadata: Metadata = rootLayoutMetadata();
@@ -20,9 +21,11 @@ export default function RootLayout({
           minHeight: "100vh",
         }}
       >
-        <Header />
-        {children}
-        <Footer />
+        <Providers>
+          <Header />
+          {children}
+          <Footer />
+        </Providers>
       </body>
     </html>
   );

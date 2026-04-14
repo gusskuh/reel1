@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { useRateLimit } from "./RateLimitContext";
 import RateLimitDots from "./RateLimitDots";
 
 const MENU_LINKS = [
@@ -43,6 +44,7 @@ export default function Header() {
   const menuId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
   const supabaseOk = isSupabaseConfigured();
+  const { refresh: refreshRateLimit } = useRateLimit();
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
@@ -51,8 +53,9 @@ export default function Header() {
     const supabase = createClient();
     await supabase.auth.signOut();
     closeMenu();
+    await refreshRateLimit();
     router.refresh();
-  }, [closeMenu, router, supabaseOk]);
+  }, [closeMenu, refreshRateLimit, router, supabaseOk]);
 
   useEffect(() => {
     if (!menuOpen) return;
