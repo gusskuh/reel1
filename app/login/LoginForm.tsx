@@ -4,14 +4,22 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthCard, authFieldStyles } from "@/app/components/AuthCard";
+import { getAuthRedirectOrigin } from "@/lib/authRedirectOrigin";
 import { createClient } from "@/lib/supabase/client";
 
 type Props = {
   initialError?: string;
   registered?: boolean;
+  /** Post-login path (internal only), e.g. /buy-credits */
+  next?: string;
 };
 
-export function LoginForm({ initialError, registered }: Props) {
+function safeNextPath(next: string | undefined): string {
+  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+  return "/";
+}
+
+export function LoginForm({ initialError, registered, next }: Props) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,6 +33,7 @@ export function LoginForm({ initialError, registered }: Props) {
           : null
   );
   const [loading, setLoading] = useState(false);
+  const afterLogin = safeNextPath(next);
 
   async function signInWithGoogle() {
     setError(null);
@@ -33,7 +42,7 @@ export function LoginForm({ initialError, registered }: Props) {
     const { error: oAuthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${getAuthRedirectOrigin()}/auth/callback?next=${encodeURIComponent(afterLogin)}`,
       },
     });
     setLoading(false);
@@ -51,7 +60,7 @@ export function LoginForm({ initialError, registered }: Props) {
       setError(signError.message);
       return;
     }
-    router.push("/");
+    router.push(afterLogin);
     router.refresh();
   }
 

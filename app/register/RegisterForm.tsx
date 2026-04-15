@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthCard, authFieldStyles } from "@/app/components/AuthCard";
+import { getAuthRedirectOrigin } from "@/lib/authRedirectOrigin";
 import { createClient } from "@/lib/supabase/client";
 
 export function RegisterForm() {
@@ -23,7 +24,7 @@ export function RegisterForm() {
     const { error: oAuthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
       },
     });
     setLoading(false);
@@ -48,7 +49,7 @@ export function RegisterForm() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
       },
     });
     setLoading(false);

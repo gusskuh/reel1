@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type RateInfo = {
   used: number;
@@ -51,6 +52,13 @@ export function RateLimitProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh();
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
+        refresh();
+      }
+    });
+    return () => subscription.unsubscribe();
   }, [refresh]);
 
   return (
