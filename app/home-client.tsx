@@ -456,7 +456,9 @@ export default function HomeClient({
           >
             {nicheLanding
               ? NICHE_SEO[niche].heroLead
-              : `Pick a niche, choose a voice, and get a ready-to-post reel in seconds. ${USER_SIGNUP_REEL_CREDITS} free credits when you sign up.`}
+              : rateLimit?.kind === "user"
+                ? "Pick a niche, choose a voice, and get a ready-to-post reel in seconds."
+                : `Pick a niche, choose a voice, and get a ready-to-post reel in seconds. ${USER_SIGNUP_REEL_CREDITS} free credits when you sign up.`}
           </p>
 
           {/* Generator Card */}
