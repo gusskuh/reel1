@@ -1,6 +1,7 @@
 "use client";
 
 import { useRateLimit } from "./RateLimitContext";
+import GoldCoin from "./GoldCoin";
 
 export default function RateLimitDots() {
   const { rateLimit } = useRateLimit();
@@ -9,33 +10,34 @@ export default function RateLimitDots() {
 
   const aria =
     rateLimit.kind === "user"
-      ? `${rateLimit.remaining} reel credits of ${rateLimit.limit} shown in the meter`
+      ? `${rateLimit.remaining} reel credits remaining`
       : `${rateLimit.remaining} of ${rateLimit.limit} free guest reels remaining`;
 
-  const label =
-    rateLimit.kind === "user"
-      ? `${rateLimit.remaining} credits`
-      : `${rateLimit.remaining} free`;
-
   return (
-    <div className="rate-limit-row" aria-label={aria}>
-      <span className="rate-limit-label">{label}</span>
-      <div className="rate-limit-dot-track">
-        {Array.from({ length: rateLimit.limit }).map((_, i) => (
-          <span
-            key={i}
-            className="rate-limit-dot"
-            style={{
-              background:
-                i < rateLimit.remaining
-                  ? "linear-gradient(135deg, #00d4ff, #7c3aed)"
-                  : "rgba(255,255,255,0.12)",
-              boxShadow:
-                i < rateLimit.remaining ? "0 0 8px rgba(0, 212, 255, 0.35)" : "none",
-            }}
-          />
-        ))}
-      </div>
+    <div
+      className="rate-limit-row"
+      aria-label={aria}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "0.3rem",
+        padding: "0.3rem 0.65rem",
+        borderRadius: "999px",
+        border: "1px solid rgba(255,255,255,0.1)",
+        background: "rgba(255,255,255,0.04)",
+      }}
+    >
+      <GoldCoin size={26} />
+      <span
+        style={{
+          fontSize: "0.8rem",
+          fontWeight: 700,
+          color: "#c4b5fd",
+          letterSpacing: "0.01em",
+        }}
+      >
+        {rateLimit.remaining}
+      </span>
     </div>
   );
 }
