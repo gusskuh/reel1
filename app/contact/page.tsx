@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { SITE_NAME, getSiteUrl } from "@/lib/seoConfig";
+import JsonLd from "@/app/components/JsonLd";
 
 const desc = "Get in touch with the ReelGen team. We're happy to help with questions, feedback, or support.";
 
@@ -23,9 +24,33 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+const contactJsonLd = () => {
+  const base = getSiteUrl();
+  return {
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    name: `Contact Us — ${SITE_NAME}`,
+    url: `${base}/contact`,
+    description: desc,
+    mainEntity: {
+      "@type": "Organization",
+      name: SITE_NAME,
+      url: base,
+      email: "reelgenz.app@gmail.com",
+      contactPoint: {
+        "@type": "ContactPoint",
+        email: "reelgenz.app@gmail.com",
+        contactType: "customer support",
+        availableLanguage: "English",
+      },
+    },
+  };
+};
+
 export default function ContactPage() {
   return (
     <>
+    <JsonLd data={contactJsonLd()} />
     <style>{`.contact-btn:hover { opacity: 0.85; }`}</style>
     <main
       style={{
