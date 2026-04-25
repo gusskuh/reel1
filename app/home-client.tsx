@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
+import posthog from "posthog-js";
 import { NICHE_OPTIONS, nicheDisplayLabel, type Niche } from "@/lib/nicheConfig";
 import { NICHE_SEO } from "@/lib/nicheSeoContent";
 import { USER_SIGNUP_REEL_CREDITS } from "@/lib/reelQuotaConstants";
@@ -167,6 +168,13 @@ export default function HomeClient({
     setTiktokPublishError(null);
     setTiktokShareUrl(null);
 
+    posthog.capture("reel_generation_started", {
+      niche,
+      voice,
+      subtitle_size: subtitleSize,
+      user_kind: rateLimit?.kind ?? "unknown",
+    });
+
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -188,6 +196,7 @@ export default function HomeClient({
         if (res.status === 403 && errBody?.code === "needs_register") {
           setQuotaGate("register");
           setRegisterModalOpen(true);
+          posthog.capture("quota_gate_shown", { gate: "register", niche });
           if (errBody.rateLimit) {
             setRateLimit({
               used: errBody.rateLimit.used,
@@ -201,6 +210,7 @@ export default function HomeClient({
         }
         if (res.status === 403 && errBody?.code === "needs_credits") {
           setQuotaGate("credits");
+          posthog.capture("quota_gate_shown", { gate: "credits", niche });
           if (errBody.rateLimit) {
             setRateLimit({
               used: errBody.rateLimit.used,
@@ -291,11 +301,24 @@ export default function HomeClient({
           if (j.status === "completed" && j.videoUrl) {
             setVideoUrl(j.videoUrl);
             setLoading(false);
+            posthog.capture("reel_generation_completed", {
+              niche,
+              voice,
+              subtitle_size: subtitleSize,
+              job_id: id,
+            });
             return;
           }
           if (j.status === "failed") {
             setError(j.error || "Generation failed");
             setLoading(false);
+            posthog.capture("reel_generation_failed", {
+              niche,
+              voice,
+              subtitle_size: subtitleSize,
+              job_id: id,
+              error: j.error || "Generation failed",
+            });
             return;
           }
           setTimeout(poll, POLL_INTERVAL_MS);
@@ -321,6 +344,7 @@ export default function HomeClient({
     setTiktokPublishing(true);
     setTiktokPublishError(null);
     setTiktokShareUrl(null);
+    posthog.capture("tiktok_publish_clicked", { job_id: jobId, niche });
     try {
       const r = await fetch("/api/tiktok/publish", {
         method: "POST",
@@ -329,7 +353,10 @@ export default function HomeClient({
       });
       const data = (await readJsonBody<{ error?: string; shareUrl?: string }>(r)) ?? {};
       if (!r.ok) throw new Error(data.error || `Publish failed (${r.status})`);
-      if (data.shareUrl) setTiktokShareUrl(data.shareUrl);
+      if (data.shareUrl) {
+        setTiktokShareUrl(data.shareUrl);
+        posthog.capture("tiktok_published", { job_id: jobId, niche, share_url: data.shareUrl });
+      }
     } catch (e) {
       setTiktokPublishError(e instanceof Error ? e.message : "Could not post to TikTok");
     } finally {
@@ -735,6 +762,7 @@ export default function HomeClient({
               <a
                 href={videoUrl}
                 download="reel.mp4"
+                onClick={() => posthog.capture("reel_downloaded", { niche, job_id: jobId })}
                 style={{
                   width: "100%",
                   textAlign: "center",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripeServer";
 import { getServiceRoleClient } from "@/lib/supabase/admin";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,19 @@ async function fulfillPaidCheckoutSession(session: Stripe.Checkout.Session): Pro
     console.error("fulfill_stripe_credit_purchase:", error.message, error.code);
     throw error;
   }
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: userId,
+    event: "credits_purchased",
+    properties: {
+      credits,
+      stripe_session_id: session.id,
+      amount_total: session.amount_total,
+      currency: session.currency,
+    },
+  });
+  await posthog.shutdown();
 }
 
 export async function POST(req: Request) {

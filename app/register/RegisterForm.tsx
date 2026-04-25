@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import posthog from "posthog-js";
 import { AuthCard, authFieldStyles } from "@/app/components/AuthCard";
 import { getAuthRedirectOrigin } from "@/lib/authRedirectOrigin";
 import { createClient } from "@/lib/supabase/client";
@@ -56,6 +57,10 @@ export function RegisterForm() {
     if (signUpError) {
       setError(signUpError.message);
       return;
+    }
+    if (data.user) {
+      posthog.identify(data.user.id, { email: data.user.email });
+      posthog.capture("user_signed_up", { method: "email" });
     }
     if (data.session) {
       router.push("/");

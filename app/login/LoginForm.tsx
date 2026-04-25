@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import posthog from "posthog-js";
 import { AuthCard, authFieldStyles } from "@/app/components/AuthCard";
 import { getAuthRedirectOrigin } from "@/lib/authRedirectOrigin";
 import { createClient } from "@/lib/supabase/client";
@@ -54,11 +55,15 @@ export function LoginForm({ initialError, registered, next }: Props) {
     setError(null);
     setLoading(true);
     const supabase = createClient();
-    const { error: signError } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: signData, error: signError } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (signError) {
       setError(signError.message);
       return;
+    }
+    if (signData.user) {
+      posthog.identify(signData.user.id, { email: signData.user.email });
+      posthog.capture("user_logged_in", { method: "email" });
     }
     router.push(afterLogin);
     router.refresh();

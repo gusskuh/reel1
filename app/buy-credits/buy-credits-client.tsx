@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import posthog from "posthog-js";
 import { CREDIT_PACKS } from "@/lib/stripeCredits";
 import GoldCoin from "@/app/components/GoldCoin";
 
@@ -30,6 +31,7 @@ export default function BuyCreditsClient({ isLoggedIn }: { isLoggedIn: boolean }
     }
     setError(null);
     setBusyTier(tier);
+    posthog.capture("checkout_initiated", { tier });
     try {
       const r = await fetch("/api/stripe/checkout", {
         method: "POST",
