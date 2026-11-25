@@ -34,7 +34,10 @@ export async function exchangeAuthorizationCode(
     }
   );
 
-  const d = response.data?.data;
+  // v2 token API returns fields at the top level (not nested under data)
+  const d = response.data?.data?.access_token
+    ? response.data.data
+    : response.data;
   if (!d?.access_token) {
     throw new Error(
       `Token exchange failed: ${JSON.stringify(response.data ?? {})}`
@@ -69,7 +72,9 @@ export async function refreshAccessToken(
     }
   );
 
-  const d = response.data?.data;
+  const d = response.data?.data?.access_token
+    ? response.data.data
+    : response.data;
   if (!d?.access_token) {
     throw new Error(
       `Token refresh failed: ${JSON.stringify(response.data ?? {})}`

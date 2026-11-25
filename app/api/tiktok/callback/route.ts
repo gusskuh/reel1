@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { exchangeAuthorizationCode } from "@/lib/tiktok/api";
+import { getAppOriginFromRequest } from "@/lib/appOrigin";
 
 export const runtime = "nodejs";
 import {
@@ -18,6 +19,14 @@ function clearStateCookie(res: NextResponse) {
   });
 }
 
+function callbackOrigin(req: Request): string {
+  return (
+    getAppOriginFromRequest(req) ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
+    new URL(req.url).origin
+  );
+}
+
 export async function GET(req: Request) {
   try {
     getSessionSecret();
@@ -30,7 +39,7 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const oauthError = url.searchParams.get("error");
-  const origin = new URL(req.url).origin;
+  const origin = callbackOrigin(req);
 
   if (oauthError) {
     const res = NextResponse.redirect(
