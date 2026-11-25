@@ -103,10 +103,7 @@ export async function POST(req: Request) {
   } catch (e) {
     const message =
       e instanceof Error ? e.message : "TikTok upload failed";
-    console.error("[TikTok publish]", e);
-    return NextResponse.json(
-      { error: message },
-      { status: 502 }
-    );
+    console.error("[TikTok publish]", message, e);
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }

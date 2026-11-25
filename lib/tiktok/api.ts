@@ -130,13 +130,42 @@ export async function fetchUserInfoBasic(accessToken: string): Promise<{
   };
 }
 
+/** TikTok FILE_UPLOAD chunking rules (Media Transfer Guide). */
+function tiktokChunkPlan(videoSize: number): {
+  chunkSize: number;
+  totalChunkCount: number;
+} {
+  const MAX = 64 * 1024 * 1024; // 64 MB
+  // Under/equal 64MB: single chunk with chunk_size === video_size
+  if (videoSize <= MAX) {
+    return { chunkSize: videoSize, totalChunkCount: 1 };
+  }
+  const totalChunkCount = Math.ceil(videoSize / MAX);
+  const chunkSize = Math.floor(videoSize / totalChunkCount);
+  return { chunkSize, totalChunkCount };
+}
+
+function tiktokAxiosErrorMessage(error: unknown): string {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data;
+    const apiMsg =
+      data?.error?.message ||
+      data?.error?.code ||
+      (typeof data === "object" ? JSON.stringify(data) : undefined);
+    if (apiMsg) return `TikTok API: ${apiMsg}`;
+    return `TikTok request failed (${error.response?.status ?? "no status"}): ${error.message}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
- * Upload MP4 via FILE_UPLOAD (chunked PUT to upload_url).
+ * Upload MP4 to TikTok inbox (draft) via FILE_UPLOAD.
+ * Inbox init accepts only source_info (no Direct Post post_info).
  */
 export async function uploadVideoToTikTok(
   accessToken: string,
   videoPath: string,
-  metadata: VideoMetadata,
+  _metadata: VideoMetadata,
   options?: { log?: (msg: string) => void }
 ): Promise<{ publishId: string; shareUrl: string }> {
   const log = options?.log ?? (() => {});
@@ -145,64 +174,74 @@ export async function uploadVideoToTikTok(
     throw new Error(`Video file not found: ${videoPath}`);
   }
 
-  const initResponse = await axios
-    .post(
+  const fileBuffer = fs.readFileSync(videoPath);
+  const videoSize = fileBuffer.length;
+  const { chunkSize, totalChunkCount } = tiktokChunkPlan(videoSize);
+
+  log(
+    `Init inbox upload: size=${videoSize}, chunk_size=${chunkSize}, chunks=${totalChunkCount}`
+  );
+
+  let initResponse;
+  try {
+    initResponse = await axios.post(
       `${TIKTOK_BASE_URL}/v2/post/publish/inbox/video/init/`,
       {
-        post_info: {
-          title: metadata.title,
-          description: metadata.description || metadata.title,
-          privacy_level: metadata.privacyLevel || "PUBLIC_TO_EVERYONE",
-          disable_duet: metadata.disableDuet ?? false,
-          disable_comment: metadata.disableComment ?? false,
-          disable_stitch: metadata.disableStitch ?? false,
-          video_cover_timestamp_ms: metadata.videoCoverTimestamp ?? 1000,
-        },
         source_info: {
           source: "FILE_UPLOAD",
+          video_size: videoSize,
+          chunk_size: chunkSize,
+          total_chunk_count: totalChunkCount,
         },
       },
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
+          "Content-Type": "application/json; charset=UTF-8",
         },
       }
-    )
-    .catch((error) => {
-      log(`TikTok init error: ${JSON.stringify(error.response?.data ?? error.message)}`);
-      throw error;
-    });
+    );
+  } catch (error) {
+    log(`TikTok init error: ${tiktokAxiosErrorMessage(error)}`);
+    throw new Error(tiktokAxiosErrorMessage(error));
+  }
 
-  const publishId = initResponse.data.data.publish_id;
-  const uploadUrl = initResponse.data.data.upload_url;
+  const publishId = initResponse.data?.data?.publish_id;
+  const uploadUrl = initResponse.data?.data?.upload_url;
 
-  if (!uploadUrl) {
-    throw new Error("No upload URL received from TikTok");
+  if (!uploadUrl || !publishId) {
+    throw new Error(
+      `No upload URL from TikTok: ${JSON.stringify(initResponse.data ?? {})}`
+    );
   }
 
   log(`Upload initialized. Publish ID: ${publishId}`);
 
-  const chunkSize = 5 * 1024 * 1024;
-  const fileBuffer = fs.readFileSync(videoPath);
-  const totalSize = fileBuffer.length;
+  for (let i = 0; i < totalChunkCount; i++) {
+    const start = i * chunkSize;
+    const end =
+      i === totalChunkCount - 1
+        ? videoSize
+        : Math.min(start + chunkSize, videoSize);
+    const chunk = fileBuffer.subarray(start, end);
 
-  for (let start = 0; start < totalSize; start += chunkSize) {
-    const end = Math.min(start + chunkSize, totalSize);
-    const chunk = fileBuffer.slice(start, end);
-
-    await axios.put(uploadUrl, chunk, {
-      headers: {
-        "Content-Type": "video/mp4",
-        "Content-Range": `bytes ${start}-${end - 1}/${totalSize}`,
-        "Content-Length": (end - start).toString(),
-      },
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-    });
+    try {
+      await axios.put(uploadUrl, chunk, {
+        headers: {
+          "Content-Type": "video/mp4",
+          "Content-Range": `bytes ${start}-${end - 1}/${videoSize}`,
+          "Content-Length": String(end - start),
+        },
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+      });
+    } catch (error) {
+      log(`TikTok chunk ${i + 1}/${totalChunkCount} error: ${tiktokAxiosErrorMessage(error)}`);
+      throw new Error(tiktokAxiosErrorMessage(error));
+    }
   }
 
-  log("Chunks uploaded; finalizing…");
+  log("Chunks uploaded; fetching status…");
 
   const finalizeResponse = await axios.post(
     `${TIKTOK_BASE_URL}/v2/post/publish/status/fetch/`,
@@ -210,12 +249,12 @@ export async function uploadVideoToTikTok(
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=UTF-8",
       },
     }
   );
 
-  const shareId = finalizeResponse.data.data?.share_id ?? publishId;
+  const shareId = finalizeResponse.data?.data?.share_id ?? publishId;
   const shareUrl = `https://www.tiktok.com/t/${shareId}`;
 
   return { publishId, shareUrl };
