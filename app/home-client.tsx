@@ -108,6 +108,8 @@ export default function HomeClient({
   const [tiktokPublishing, setTiktokPublishing] = useState(false);
   const [tiktokPublishError, setTiktokPublishError] = useState<string | null>(null);
   const [tiktokShareUrl, setTiktokShareUrl] = useState<string | null>(null);
+  const [tiktokCaption, setTiktokCaption] = useState<string | null>(null);
+  const [tiktokCaptionCopied, setTiktokCaptionCopied] = useState(false);
 
   const refreshTiktokStatus = useCallback(async () => {
     try {
@@ -344,6 +346,8 @@ export default function HomeClient({
     setTiktokPublishing(true);
     setTiktokPublishError(null);
     setTiktokShareUrl(null);
+    setTiktokCaption(null);
+    setTiktokCaptionCopied(false);
     posthog.capture("tiktok_publish_clicked", { job_id: jobId, niche });
     try {
       const r = await fetch("/api/tiktok/publish", {
@@ -351,12 +355,14 @@ export default function HomeClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jobId }),
       });
-      const data = (await readJsonBody<{ error?: string; shareUrl?: string }>(r)) ?? {};
+      const data =
+        (await readJsonBody<{ error?: string; shareUrl?: string; caption?: string }>(r)) ?? {};
       if (!r.ok) throw new Error(data.error || `Publish failed (${r.status})`);
       if (data.shareUrl) {
         setTiktokShareUrl(data.shareUrl);
         posthog.capture("tiktok_published", { job_id: jobId, niche, share_url: data.shareUrl });
       }
+      if (data.caption) setTiktokCaption(data.caption);
     } catch (e) {
       setTiktokPublishError(e instanceof Error ? e.message : "Could not post to TikTok");
     } finally {
@@ -364,16 +370,28 @@ export default function HomeClient({
     }
   }
 
+  async function copyTiktokCaption() {
+    if (!tiktokCaption) return;
+    try {
+      await navigator.clipboard.writeText(tiktokCaption);
+      setTiktokCaptionCopied(true);
+      window.setTimeout(() => setTiktokCaptionCopied(false), 2000);
+    } catch {
+      setTiktokPublishError("Could not copy caption — select and copy it manually.");
+    }
+  }
+
   const selectStyle: React.CSSProperties = {
     padding: "0.6rem 0.85rem",
     borderRadius: "0.5rem",
     border: "1px solid rgba(255,255,255,0.1)",
-    background: "rgba(255,255,255,0.05)",
+    background: "rgba(20, 20, 31, 0.95)",
     color: "#e8e8e8",
     fontSize: "0.9rem",
     cursor: loading ? "not-allowed" : "pointer",
     outline: "none",
     width: "100%",
+    colorScheme: "dark",
   };
 
   const labelStyle: React.CSSProperties = {
@@ -874,6 +892,58 @@ export default function HomeClient({
                           Open TikTok link →
                         </a>
                       </p>
+                    )}
+                    {tiktokCaption && (
+                      <div
+                        style={{
+                          marginTop: "0.85rem",
+                          padding: "0.75rem",
+                          borderRadius: "0.5rem",
+                          background: "rgba(255,255,255,0.04)",
+                          border: "1px solid rgba(255,255,255,0.08)",
+                          textAlign: "left",
+                        }}
+                      >
+                        <p
+                          style={{
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            color: "#9ca3af",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.06em",
+                            marginBottom: "0.45rem",
+                          }}
+                        >
+                          Suggested caption (paste in TikTok)
+                        </p>
+                        <p
+                          style={{
+                            fontSize: "0.82rem",
+                            color: "#e5e7eb",
+                            lineHeight: 1.45,
+                            whiteSpace: "pre-wrap",
+                            marginBottom: "0.65rem",
+                          }}
+                        >
+                          {tiktokCaption}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void copyTiktokCaption()}
+                          style={{
+                            padding: "0.45rem 0.85rem",
+                            borderRadius: "0.4rem",
+                            border: "1px solid rgba(167,139,250,0.45)",
+                            background: "rgba(124,58,237,0.18)",
+                            color: "#e9d5ff",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {tiktokCaptionCopied ? "Copied ✓" : "Copy caption"}
+                        </button>
+                      </div>
                     )}
                   </>
                 )}

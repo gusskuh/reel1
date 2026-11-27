@@ -11,7 +11,10 @@ import {
   ensureValidAccessToken,
   uploadVideoToTikTok,
 } from "@/lib/tiktok/api";
-import { generateWebReelTikTokMetadata } from "@/lib/tiktok/metadata";
+import {
+  generateWebReelTikTokMetadata,
+  tiktokPasteCaption,
+} from "@/lib/tiktok/metadata";
 import {
   TIKTOK_TOKEN_COOKIE,
   parseTokenCookie,
@@ -86,7 +89,8 @@ export async function POST(req: Request) {
       { log: (m) => console.log(`[TikTok publish] ${m}`) }
     );
 
-    const res = NextResponse.json({ ok: true, shareUrl });
+    const caption = tiktokPasteCaption(meta);
+    const res = NextResponse.json({ ok: true, shareUrl, caption });
 
     if (
       session.access_token !== token.access_token ||
