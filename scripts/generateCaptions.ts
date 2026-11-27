@@ -19,8 +19,14 @@ interface CaptionSegment {
   text: string;
 }
 
+export interface CaptionWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
 /**
- * Generate timestamped captions (SRT) using OpenAI Whisper transcription
+ * Generate timestamped captions (SRT) + optional word timings for TikTok-style ASS.
  */
 export async function generateCaptions(
   audioPath: string,
@@ -34,17 +40,18 @@ export async function generateCaptions(
 
   let response: any;
   let segments: { start: number; end: number; text: string }[] | undefined;
+  let words: CaptionWord[] | undefined;
 
   try {
-    // Try whisper-1 with verbose_json first (supports timestamps)
     response = await client.audio.transcriptions.create({
       file: fs.createReadStream(audioPath),
       model: "whisper-1",
       response_format: "verbose_json",
-    });
+      timestamp_granularities: ["word", "segment"],
+    } as Parameters<typeof client.audio.transcriptions.create>[0]);
     segments = response.segments;
+    words = normalizeWhisperWords(response.words);
   } catch (error: any) {
-    // Fallback: if verbose_json fails, try with json format
     if (error?.code === "unsupported_value" || error?.message?.includes("verbose_json")) {
       console.log("⚠️  verbose_json not supported, trying json format...");
       response = await client.audio.transcriptions.create({
@@ -52,32 +59,74 @@ export async function generateCaptions(
         model: "whisper-1",
         response_format: "json",
       });
-      // json format doesn't include segments, so we'll create a single caption
       segments = undefined;
+      words = undefined;
+    } else if (error?.message?.includes("timestamp_granularities") || error?.code === "invalid_request_error") {
+      console.log("⚠️  Word timestamps unavailable, falling back to segments…");
+      response = await client.audio.transcriptions.create({
+        file: fs.createReadStream(audioPath),
+        model: "whisper-1",
+        response_format: "verbose_json",
+      });
+      segments = response.segments;
+      words = undefined;
     } else {
       throw error;
     }
   }
 
   if (!segments?.length) {
-    // Fallback: if no segments, create a single caption from the text
     const text = response.text || "...";
     console.warn("⚠️ No segments returned — creating single caption from text.");
-    
-    // Get audio duration using ffprobe
+
     const duration = await getAudioDuration(audioPath);
     fs.writeFileSync(
       outputFile,
       toSRT([{ start: 0, end: duration, text: text }])
     );
+    writeWordsSidecar(outputFile, undefined);
     return path.resolve(outputFile);
   }
 
   const srt = toSRT(segments);
   fs.writeFileSync(outputFile, srt);
+  writeWordsSidecar(outputFile, words);
 
-  console.log(`✅ Captions saved: ${outputFile}`);
+  console.log(
+    `✅ Captions saved: ${outputFile}${words?.length ? ` (+${words.length} word timings)` : ""}`
+  );
   return path.resolve(outputFile);
+}
+
+function normalizeWhisperWords(
+  raw: { word?: string; start?: number; end?: number }[] | undefined
+): CaptionWord[] | undefined {
+  if (!raw?.length) return undefined;
+  const out: CaptionWord[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const w = raw[i];
+    const text = (w.word || "").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    let start = Number(w.start);
+    let end = Number(w.end);
+    if (!Number.isFinite(start)) start = out.length ? out[out.length - 1].end : 0;
+    if (!Number.isFinite(end) || end <= start) {
+      const next = raw[i + 1];
+      const nextStart = Number(next?.start);
+      end = Number.isFinite(nextStart) && nextStart > start ? nextStart : start + 0.28;
+    }
+    out.push({ word: text, start, end });
+  }
+  return out.length ? out : undefined;
+}
+
+function writeWordsSidecar(srtPath: string, words: CaptionWord[] | undefined): void {
+  const wordsPath = srtPath.replace(/\.srt$/i, ".words.json");
+  if (!words?.length) {
+    if (fs.existsSync(wordsPath)) fs.unlinkSync(wordsPath);
+    return;
+  }
+  fs.writeFileSync(wordsPath, JSON.stringify({ words }, null, 2), "utf8");
 }
 
 /**
@@ -116,7 +165,7 @@ function formatTimestamp(sec: number): string {
  * Get audio duration in seconds using ffprobe
  */
 async function getAudioDuration(file: string): Promise<number> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     ffmpeg.ffprobe(file, (err, metadata) => {
       if (err) {
         console.warn("⚠️  Could not get audio duration, using default 30s");
@@ -127,5 +176,3 @@ async function getAudioDuration(file: string): Promise<number> {
     });
   });
 }
-
-// Remove standalone execution - this is called from index.ts

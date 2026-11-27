@@ -570,10 +570,43 @@ function escapeAssDialogueRow(row: string): string {
     .replace(/}/g, "\\}");
 }
 
-/** SRT → ASS so libass reads font size / margins from the file (no `force_style` in ffmpeg args). */
-function srtToAss(srtPath: string, assPath: string, subtitleSize: SubtitleSize): void {
-  const raw = fs.readFileSync(srtPath, "utf8");
+/** ASS BGR yellow used for the active TikTok-style word highlight. */
+const TIKTOK_HIGHLIGHT = "&H0000D4FF&"; // #FFD400
+const TIKTOK_WORDS_PER_GROUP = 3;
+
+type CaptionWordTiming = { word: string; start: number; end: number };
+
+function loadCaptionWords(srtPath: string): CaptionWordTiming[] | null {
+  const wordsPath = srtPath.replace(/\.srt$/i, ".words.json");
+  if (!fs.existsSync(wordsPath)) return null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(wordsPath, "utf8")) as {
+      words?: CaptionWordTiming[];
+    };
+    const words = (raw.words || [])
+      .map((w) => ({
+        word: String(w.word || "").trim(),
+        start: Number(w.start),
+        end: Number(w.end),
+      }))
+      .filter((w) => w.word && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start);
+    return words.length ? words : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * TikTok-style captions: 2–3 words on screen, active word highlighted yellow,
+ * bold white text, thick black outline, uppercase.
+ */
+function wordsToTikTokAss(
+  words: CaptionWordTiming[],
+  assPath: string,
+  subtitleSize: SubtitleSize
+): void {
   const { fontPx, sideInset, marginV } = SUBTITLE_ASS_LAYOUT[subtitleSize];
+  const outline = subtitleSize === "s" ? 3 : subtitleSize === "m" ? 4 : 5;
   const header = `[Script Info]
 ScriptType: v4.00+
 WrapStyle: 0
@@ -583,7 +616,61 @@ PlayResY: ${OUTPUT_H}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,${fontPx},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,1,2,${sideInset},${sideInset},${marginV},1
+Style: Default,Arial,${fontPx},&H00FFFFFF,${TIKTOK_HIGHLIGHT},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${outline},2,2,${sideInset},${sideInset},${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+
+  const dialogues: string[] = [];
+  for (let g = 0; g < words.length; g += TIKTOK_WORDS_PER_GROUP) {
+    const group = words.slice(g, g + TIKTOK_WORDS_PER_GROUP);
+    for (let i = 0; i < group.length; i++) {
+      const active = group[i];
+      const start = secondsToAssTime(active.start);
+      // Hold highlight until next word; last word in group holds to its end (or tiny pad)
+      const endSec =
+        i < group.length - 1
+          ? group[i + 1].start
+          : Math.max(active.end, active.start + 0.12);
+      const end = secondsToAssTime(endSec);
+      const parts = group.map((w, j) => {
+        const token = escapeAssDialogueRow(w.word.toUpperCase());
+        if (j === i) {
+          return `{\\c${TIKTOK_HIGHLIGHT}\\b1}${token}{\\c&H00FFFFFF&\\b0}`;
+        }
+        return token;
+      });
+      dialogues.push(
+        `Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an2\\q2}${parts.join(" ")}`
+      );
+    }
+  }
+
+  fs.writeFileSync(assPath, header + dialogues.join("\n") + "\n", "utf8");
+}
+
+/** SRT → ASS so libass reads font size / margins from the file (no `force_style` in ffmpeg args). */
+function srtToAss(srtPath: string, assPath: string, subtitleSize: SubtitleSize): void {
+  const words = loadCaptionWords(srtPath);
+  if (words?.length) {
+    wordsToTikTokAss(words, assPath, subtitleSize);
+    return;
+  }
+
+  const raw = fs.readFileSync(srtPath, "utf8");
+  const { fontPx, sideInset, marginV } = SUBTITLE_ASS_LAYOUT[subtitleSize];
+  const outline = subtitleSize === "s" ? 3 : 4;
+  const header = `[Script Info]
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+PlayResX: ${OUTPUT_W}
+PlayResY: ${OUTPUT_H}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,${fontPx},&H00FFFFFF,${TIKTOK_HIGHLIGHT},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,${outline},2,2,${sideInset},${sideInset},${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -607,13 +694,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       .slice(ti + 1)
       .join(" ")
       .replace(/\s+/g, " ")
-      .trim();
+      .trim()
+      .toUpperCase();
     const maxChars = maxCharsPerCaptionLine(sideInset, fontPx);
-    const wrapped = wrapCaptionWordsToAssLines(rawCue, maxChars);
+    const wrapped = wrapCaptionWordsToAssLines(rawCue, Math.min(maxChars, 18));
     // Escape per row, then `\N` line breaks — global `\\` replace would turn `\N` into `\\N` and show stray "\" on screen.
     const text = wrapped.split("\\N").map(escapeAssDialogueRow).join("\\N");
-       // ASS fields: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text — only ONE comma for empty Name (not `,,,`).
-    dialogues.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an2}${text}`);
+    dialogues.push(`Dialogue: 0,${start},${end},Default,,0,0,0,,{\\an2\\q2}${text}`);
   }
   fs.writeFileSync(assPath, header + dialogues.join("\n") + "\n", "utf8");
 }
