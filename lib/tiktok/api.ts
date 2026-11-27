@@ -148,14 +148,56 @@ function tiktokChunkPlan(videoSize: number): {
 function tiktokAxiosErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data;
-    const apiMsg =
-      data?.error?.message ||
-      data?.error?.code ||
-      (typeof data === "object" ? JSON.stringify(data) : undefined);
-    if (apiMsg) return `TikTok API: ${apiMsg}`;
+    const code = data?.error?.code as string | undefined;
+    const apiMsg = data?.error?.message as string | undefined;
+    if (code === "spam_risk_too_many_pending_share") {
+      return "TikTok limit: you already have too many unpublished API drafts (max 5 per 24h). Open TikTok inbox, post or discard old drafts, then try again.";
+    }
+    if (code || apiMsg) return `TikTok API: ${code || "error"}${apiMsg ? ` — ${apiMsg}` : ""}`;
+    if (typeof data === "object") return `TikTok API: ${JSON.stringify(data)}`;
     return `TikTok request failed (${error.response?.status ?? "no status"}): ${error.message}`;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+function assertTikTokOk(payload: unknown, step: string): void {
+  const body = payload as {
+    error?: { code?: string; message?: string };
+    data?: unknown;
+  };
+  const code = body?.error?.code;
+  if (code && code !== "ok") {
+    if (code === "spam_risk_too_many_pending_share") {
+      throw new Error(
+        "TikTok limit: you already have too many unpublished API drafts (max 5 per 24h). Open TikTok inbox, post or discard old drafts, then try again."
+      );
+    }
+    throw new Error(
+      `TikTok ${step} failed: ${code}${body.error?.message ? ` — ${body.error.message}` : ""}`
+    );
+  }
+}
+
+async function fetchPublishStatus(
+  accessToken: string,
+  publishId: string
+): Promise<{ status?: string; share_id?: string; fail_reason?: string }> {
+  const res = await axios.post(
+    `${TIKTOK_BASE_URL}/v2/post/publish/status/fetch/`,
+    { publish_id: publishId },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+    }
+  );
+  assertTikTokOk(res.data, "status");
+  return (res.data?.data ?? {}) as {
+    status?: string;
+    share_id?: string;
+    fail_reason?: string;
+  };
 }
 
 /**
@@ -176,6 +218,9 @@ export async function uploadVideoToTikTok(
 
   const fileBuffer = fs.readFileSync(videoPath);
   const videoSize = fileBuffer.length;
+  if (videoSize <= 0) {
+    throw new Error("Video file is empty on server.");
+  }
   const { chunkSize, totalChunkCount } = tiktokChunkPlan(videoSize);
 
   log(
@@ -206,8 +251,10 @@ export async function uploadVideoToTikTok(
     throw new Error(tiktokAxiosErrorMessage(error));
   }
 
-  const publishId = initResponse.data?.data?.publish_id;
-  const uploadUrl = initResponse.data?.data?.upload_url;
+  assertTikTokOk(initResponse.data, "init");
+
+  const publishId = initResponse.data?.data?.publish_id as string | undefined;
+  const uploadUrl = initResponse.data?.data?.upload_url as string | undefined;
 
   if (!uploadUrl || !publishId) {
     throw new Error(
@@ -234,6 +281,7 @@ export async function uploadVideoToTikTok(
         },
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
+        validateStatus: (s) => s === 200 || s === 201 || s === 206,
       });
     } catch (error) {
       log(`TikTok chunk ${i + 1}/${totalChunkCount} error: ${tiktokAxiosErrorMessage(error)}`);
@@ -241,21 +289,42 @@ export async function uploadVideoToTikTok(
     }
   }
 
-  log("Chunks uploaded; fetching status…");
+  log("Chunks uploaded; waiting for TikTok processing…");
 
-  const finalizeResponse = await axios.post(
-    `${TIKTOK_BASE_URL}/v2/post/publish/status/fetch/`,
-    { publish_id: publishId },
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json; charset=UTF-8",
-      },
+  let shareId = publishId;
+  let lastStatus = "";
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const data = await fetchPublishStatus(accessToken, publishId);
+    lastStatus = data.status || "";
+    log(`Status poll ${attempt + 1}: ${lastStatus || "(empty)"}`);
+
+    if (data.share_id) shareId = data.share_id;
+
+    if (
+      lastStatus === "FAILED" ||
+      lastStatus === "SEND_TO_USER_INBOX_FAILED" ||
+      lastStatus === "PUBLISH_COMPLETE" ||
+      lastStatus === "SEND_TO_USER_INBOX"
+    ) {
+      if (lastStatus.includes("FAILED")) {
+        throw new Error(
+          `TikTok processing failed${data.fail_reason ? `: ${data.fail_reason}` : ` (${lastStatus})`}`
+        );
+      }
+      break;
     }
-  );
 
-  const shareId = finalizeResponse.data?.data?.share_id ?? publishId;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+
+  if (
+    lastStatus &&
+    lastStatus !== "SEND_TO_USER_INBOX" &&
+    lastStatus !== "PUBLISH_COMPLETE"
+  ) {
+    log(`Upload finished with status=${lastStatus}; inbox may still be processing.`);
+  }
+
   const shareUrl = `https://www.tiktok.com/t/${shareId}`;
-
   return { publishId, shareUrl };
 }
