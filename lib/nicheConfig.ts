@@ -40,16 +40,16 @@ export function nicheDisplayLabel(niche: Niche): string {
   return hit?.label ?? niche;
 }
 
-/** Pexels / scene search hints per niche */
+/** Default stock-search hint per niche (broadcast-style free stock, not wire footage). */
 export const SCENE_KEYWORDS: Record<Niche, string> = {
-  financial: "financial news stock market",
-  general: "news headlines journalism",
-  world: "world news international globe",
-  nation: "america usa news washington",
-  business: "business corporate office",
-  technology: "technology software innovation",
-  entertainment: "entertainment music movies",
-  sports: "sports stadium athletics",
-  science: "science laboratory space research",
-  health: "health medical wellness",
+  financial: "trading floor stock exchange news",
+  general: "newsroom press conference journalism",
+  world: "international city skyline diplomacy",
+  nation: "washington capitol news reporting",
+  business: "corporate skyline boardroom news",
+  technology: "data center servers technology news",
+  entertainment: "red carpet concert crowd nightlife",
+  sports: "stadium crowd sports broadcast",
+  science: "laboratory research telescope science",
+  health: "hospital exterior ambulance medical",
 };

@@ -6,16 +6,18 @@ dotenv.config();
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-/** Broader fallbacks so non-finance niches don't all land on the same market clips. */
+/** Broadcast-flavored stock queries (still free stock — not real wire footage). */
 const DEFAULT_FALLBACK_QUERIES = [
-  "city street",
-  "office work",
-  "nature landscape",
-  "technology",
-  "people walking",
-  "sports action",
-  "business meeting",
-  "news studio",
+  "newsroom",
+  "press conference",
+  "breaking news studio",
+  "city skyline night",
+  "journalist reporting",
+  "crowd protest",
+  "parliament building",
+  "trading floor",
+  "server room technology",
+  "ambulance emergency",
 ];
 
 function uniqueQueries(...groups: (string | string[] | undefined)[]): string[] {
@@ -49,8 +51,13 @@ export async function generateSceneVideos(script: string, defaultKeyword = "moti
 Split this narration into short visual scenes (max 5 seconds each).
 Use at most ${MAX_REEL_SCENES} scenes total (~30 seconds of video).
 For each scene, return JSON with "text" (narration snippet) and "keywords" (3 to 5 short stock-footage search terms).
-Use 3–5 separate tokens or short phrases (e.g. "startup office", "laptop", "team meeting") that together describe one stock-footage search idea.
-Match script tone (news, business, tech, sports, etc.). Prefer visually distinct scenes so clips don't look identical. All lowercase where possible, no hashtags.
+
+Keyword style — make b-roll feel like TV/news packages (NOT lifestyle/motivational stock):
+- Prefer: newsroom, press conference, reporter mic, city streets, government building, trading floor, hospital exterior, stadium crowd, protest march, satellite dish, news desk, skyline, emergency lights, factory, parliament.
+- Avoid generic: smiling office handshake, yoga, coffee latte, abstract neon, slow-mo generic "success".
+- Each scene's keywords should be visually concrete and distinct from the other scenes.
+- All lowercase, no hashtags, no brand names (no reuters/cnn/bbc — those are not searchable stock terms we can use).
+
 Narration:
 ${script}
 
